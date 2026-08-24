@@ -14,10 +14,13 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Button, PageHeader, PriorityBadge, CheckCircle } from '../components/UI';
 import { daysUntil, isOverdue } from '../utils/dates';
+import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
   const nav = useNavigate();
   const { documents, tasks, completeTask } = useApp();
+  const { user } = useAuth();
+  const firstName = user?.fullName?.trim().split(/\s+/)[0] || 'there';
   const effective = (t) => t.userPriority || t.systemPriority || t.priority;
   const urgent = tasks.filter((t) => effective(t) === 'URGENT' && t.status !== 'Completed');
   const open = tasks.filter((t) => t.status !== 'Completed');
@@ -28,7 +31,7 @@ export default function Dashboard() {
   return (
     <>
       <PageHeader
-        title="Good morning, Haris"
+        title={`Good morning, ${firstName}`}
         description={`You have ${urgent.length} urgent items and ${upcoming.length} deadlines approaching.`}
         action={
           <Button onClick={() => nav('/app/add')}>

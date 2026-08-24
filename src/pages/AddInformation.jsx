@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Field, PageHeader, PriorityBadge } from '../components/UI';
 import { useApp } from '../context/AppContext';
 import { dueLabel, formatDate } from '../utils/dates';
+import { documentCategories, documentService } from '../services/documentService';
+import { getErrorMessage } from '../services/api';
 
 const methods = [
   ['Document', FileText, 'PDF or TXT'],
@@ -18,7 +20,13 @@ export default function AddInformation() {
     [progress, setProgress] = useState(0);
   const timer = useRef();
   const nav = useNavigate();
-  const { addDocument, setTasks, setReminders, notify } = useApp();
+  const { addDocument, setDocuments, setTasks, setReminders, notify } = useApp();
+  const saveRealDocument = async (payload) => {
+    const document = await documentService.create(payload);
+    setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)]);
+    notify('Information saved successfully');
+    nav(`/app/documents/${document.id}`);
+  };
   const saveAnalysis = (data) => {
     const id = `doc-${Date.now()}`;
     const doc = { id, title: data.title, category: data.type.includes('University') ? 'University' : data.type === 'Bill' ? 'Bills' : 'Personal', type: data.type, date: formatDate(new Date().toISOString()), deadline: formatDate(data.deadline), deadlineDate: data.deadline, priority: data.priority, status: data.actionRequired ? 'Action needed' : 'Reviewed', summary: data.summary, amount: data.amount, consequence: data.consequence, actions: data.actions, items: data.actions };
@@ -81,9 +89,9 @@ export default function AddInformation() {
         ) : method < 2 ? (
           <Upload method={method} process={process} />
         ) : method === 2 ? (
-          <Paste process={process} />
+          <Paste onSave={saveRealDocument} />
         ) : (
-          <Manual onSave={(data) => { const id = `task-${Date.now()}`; setTasks(v => [{ id, ...data, due: dueLabel(data.date), status: 'Pending', source: null, systemPriority: data.priority }, ...v]); if (data.reminder) setReminders(v => [{ id: `rem-${Date.now()}`, title: data.title, date: data.date, when: `${data.date}T${data.time || '09:00'}`, detail: data.notes || 'Manual reminder', status: 'Upcoming', taskId: id }, ...v]); notify('Manual entry saved'); nav('/app/tasks'); }} />
+          <Manual onSave={saveRealDocument} />
         )}
       </section>
     </>
@@ -134,13 +142,32 @@ function Upload({ method, process }) {
     </div>
   );
 }
-function Paste({ process }) {
+function Paste({ onSave }) {
+  const [title, setTitle] = useState('');
   const [text, setText] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    if (!title.trim()) return setError('Please enter a title.');
+    if (!text.trim()) return setError('Please enter information to save.');
+    setSaving(true); setError('');
+    try {
+      await onSave({ title: title.trim(), sourceType: 'text', category: 'other', extractedText: text.trim() });
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Unable to save information. Please try again.'));
+      setSaving(false);
+    }
+  };
   return (
     <div className="paste-form">
-      <Field label="Information to analyze">
+      {error && <div className="form-error" role="alert">{error}</div>}
+      <Field label="Title">
+        <input value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Internship Submission Notice" />
+      </Field>
+      <Field label="Information to save">
         <textarea
           rows="10"
+          maxLength={200000}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Please submit your internship report before September 10."
@@ -148,60 +175,58 @@ function Paste({ process }) {
         <small className="char-count">{text.length} characters</small>
       </Field>
       <div className="panel-footer">
-        <Button disabled={text.length < 10} onClick={process}>
-          Analyze Information
+        <Button disabled={saving} onClick={submit}>
+          {saving && <span className="button-spinner" />} {saving ? 'Saving information' : 'Save information'}
         </Button>
       </div>
     </div>
   );
 }
 function Manual({ onSave }) {
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   return (
     <form
       className="modal-form wide"
       onSubmit={(e) => {
         e.preventDefault();
-        const fd = new FormData(e.currentTarget); onSave(Object.fromEntries(fd.entries()));
+        if (saving) return;
+        const data = Object.fromEntries(new FormData(e.currentTarget));
+        const details = [
+          data.date && `Date: ${data.date}`,
+          data.time && `Time: ${data.time}`,
+          data.notes?.trim() && `Notes: ${data.notes.trim()}`,
+        ].filter(Boolean).join('\n');
+        if (!data.title?.trim()) return setError('Please enter a title.');
+        if (!details) return setError('Please enter a date, time, or notes to save.');
+        setSaving(true); setError('');
+        onSave({ title: data.title.trim(), sourceType: 'manual', category: data.category, extractedText: details })
+          .catch((requestError) => { setError(getErrorMessage(requestError, 'Unable to save information. Please try again.')); setSaving(false); });
       }}
     >
+      {error && <div className="form-error" role="alert">{error}</div>}
       <div className="form-grid">
         <Field label="Title">
           <input name="title" required placeholder="Dentist Appointment" />
         </Field>
         <Field label="Category">
-          <select name="category">
-            <option>Appointment</option>
-            <option>University</option>
-            <option>Bills</option>
-            <option>Personal</option>
+          <select name="category" defaultValue="appointment">
+            {documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
           </select>
         </Field>
         <Field label="Date">
-          <input name="date" type="date" required />
+          <input name="date" type="date" />
         </Field>
         <Field label="Time">
           <input name="time" type="time" />
-        </Field>
-        <Field label="Amount">
-          <input name="amount" placeholder="PKR 0" />
-        </Field>
-        <Field label="Priority">
-          <select name="priority">
-            <option>MEDIUM</option>
-            <option>URGENT</option>
-            <option>HIGH</option>
-            <option>LOW</option>
-          </select>
         </Field>
       </div>
       <Field label="Notes">
         <textarea name="notes" placeholder="Add any useful context" />
       </Field>
-      <label className="checkbox">
-        <input name="reminder" value="true" type="checkbox" defaultChecked /> Create a reminder
-      </label>
+      <p className="muted feature-note">Priority and reminders will be available after this information is analyzed in a future update.</p>
       <div className="panel-footer">
-        <Button>Save information</Button>
+        <Button disabled={saving}>{saving && <span className="button-spinner" />} {saving ? 'Saving information' : 'Save information'}</Button>
       </div>
     </form>
   );

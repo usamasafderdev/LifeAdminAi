@@ -1,5 +1,5 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { useApp } from './context/AppContext';
+import { useAuth } from './context/AuthContext';
 import AppShell from './components/AppShell';
 import Dashboard from './pages/Dashboard';
 import Documents from './pages/Documents';
@@ -13,13 +13,17 @@ import Settings from './pages/Settings';
 import { AskLifeAdmin, DocumentChat } from './pages/Chat';
 import { Login, Register } from './pages/Auth';
 
-function ProtectedRoute() { const { authenticated } = useApp(); return authenticated ? <Outlet /> : <Navigate to="/login" replace />; }
+function AuthLoading() { return <div className="auth-loading"><span className="button-spinner" /><strong>Opening LifeAdmin…</strong></div>; }
+function ProtectedRoute() { const { isAuthenticated, isInitializing } = useAuth(); if (isInitializing) return <AuthLoading />; return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />; }
+function PublicRoute() { const { isAuthenticated, isInitializing } = useAuth(); if (isInitializing) return <AuthLoading />; return isAuthenticated ? <Navigate to="/app/dashboard" replace /> : <Outlet />; }
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route element={<PublicRoute />}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+      </Route>
       <Route element={<ProtectedRoute />}>
       <Route path="/app" element={<AppShell />}>
         <Route index element={<Navigate to="dashboard" replace />} />

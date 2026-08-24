@@ -2,22 +2,23 @@ import { Grid2X2, List, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DocumentCard } from '../components/ItemRows';
-import { Button, EmptyState, PageHeader, SearchBox } from '../components/UI';
+import { Button, EmptyState, PageHeader, SearchBox, Skeleton } from '../components/UI';
 import { useApp } from '../context/AppContext';
 
 const cats = [
   'All',
-  'University',
-  'Bills',
-  'Contracts',
+  'University Notice',
+  'Bill',
+  'Contract',
   'Warranty',
   'Subscription',
   'Appointment',
-  'Personal',
+  'Information',
+  'Other',
 ];
 export default function Documents() {
   const nav = useNavigate();
-  const { documents } = useApp();
+  const { documents, documentsLoading, documentsError, reloadDocuments } = useApp();
   const [query, setQuery] = useState(''),
     [category, setCategory] = useState('All'),
     [priority, setPriority] = useState('All'),
@@ -30,7 +31,7 @@ export default function Documents() {
           (priority === 'All' || d.priority === priority) &&
           `${d.title} ${d.summary}`.toLowerCase().includes(query.toLowerCase()),
       ),
-    [query, category, priority],
+    [documents, query, category, priority],
   );
   return (
     <>
@@ -47,13 +48,6 @@ export default function Documents() {
       <div className="toolbar">
         <SearchBox value={query} onChange={setQuery} placeholder="Search documents…" />
         <div className="tool-filters">
-          <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-            <option>All</option>
-            <option>URGENT</option>
-            <option>HIGH</option>
-            <option>MEDIUM</option>
-            <option>LOW</option>
-          </select>
           <div className="segmented">
             <button
               className={view === 'grid' ? 'active' : ''}
@@ -79,14 +73,18 @@ export default function Documents() {
           </button>
         ))}
       </div>
-      {list.length ? (
+      {documentsLoading ? (
+        <div className="documents grid"><div className="panel"><Skeleton lines={4} /></div><div className="panel"><Skeleton lines={4} /></div></div>
+      ) : documentsError ? (
+        <EmptyState title="Unable to load your documents." text="Check your connection and try again." action={<Button onClick={reloadDocuments}>Try again</Button>} />
+      ) : list.length ? (
         <div className={`documents ${view}`}>
           {list.map((d) => (
             <DocumentCard key={d.id} doc={d} view={view} />
           ))}
         </div>
       ) : (
-        <EmptyState title="No documents found" text="Try another search or remove a filter." />
+        <EmptyState title={documents.length ? 'No documents found' : 'No documents yet'} text={documents.length ? 'Try another search or remove a filter.' : 'Save pasted text or a manual entry to see it here.'} action={!documents.length ? <Button onClick={() => nav('/app/add')}>Add Information</Button> : undefined} />
       )}
     </>
   );

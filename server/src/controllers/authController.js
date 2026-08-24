@@ -8,6 +8,7 @@ const safeUser = (user) => ({
   _id: user._id,
   fullName: user.fullName,
   email: user.email,
+  avatarUrl: user.avatarUrl,
   createdAt: user.createdAt,
 });
 
@@ -101,6 +102,9 @@ export async function googleAuth(req, res, next) {
     const payload = await verifyGoogleCredential(credential.trim());
     const { sub, email, email_verified: emailVerified, name, picture } = payload ?? {};
     if (!sub || typeof email !== 'string' || !emailVerified) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error(`[Google Auth] Verified payload rejected: sub=${Boolean(sub)}, email=${typeof email === 'string'}, email_verified=${emailVerified === true}`);
+      }
       return res.status(401).json({ success: false, message: 'Google authentication failed' });
     }
 

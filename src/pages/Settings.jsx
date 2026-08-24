@@ -1,7 +1,7 @@
 import { Bell, Bot, Download, Monitor, Moon, Palette, Shield, Sun, UserRound } from 'lucide-react';
 import { useState } from 'react';
-import { user } from '../data/mockData';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { Button, ConfirmDialog, Field, PageHeader, Toggle } from '../components/UI';
 
 const sections = [
@@ -16,6 +16,8 @@ export default function Settings() {
   const [active, setActive] = useState('Profile'),
     [danger, setDanger] = useState(false);
   const { theme, setTheme, notify } = useApp();
+  const { user } = useAuth();
+  const initials = (user?.fullName || 'LifeAdmin User').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   return (
     <>
       <PageHeader title="Settings" description="Manage your account, preferences and data." />
@@ -33,18 +35,18 @@ export default function Settings() {
             <>
               <SettingHead title="Profile" text="Update your personal details and timezone." />
               <div className="profile-edit">
-                <span className="avatar large">{user.initials}</span>
+                <span className="avatar large">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</span>
                 <Button variant="secondary">Change photo</Button>
               </div>
               <div className="form-grid">
                 <Field label="Full name">
-                  <input defaultValue={user.name} />
+                  <input defaultValue={user?.fullName} />
                 </Field>
                 <Field label="Email">
-                  <input defaultValue={user.email} />
+                  <input defaultValue={user?.email} />
                 </Field>
                 <Field label="Timezone">
-                  <select defaultValue={user.timezone}>
+                  <select defaultValue="Asia/Karachi">
                     <option>Asia/Karachi</option>
                     <option>UTC</option>
                     <option>Europe/London</option>

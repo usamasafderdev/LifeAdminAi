@@ -1,13 +1,18 @@
 import {
   ArrowLeft,
   Bot,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
   Download,
   Edit3,
   ExternalLink,
   FileText,
+  Layers3,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
@@ -18,8 +23,10 @@ import {
   EmptyState, Field, Modal,
   PageHeader,
   PriorityBadge,
+  Skeleton,
 } from '../components/UI';
 import { formatDate } from '../utils/dates';
+import { documentService } from '../services/documentService';
 
 export default function DocumentDetail() {
   const { id } = useParams();
@@ -27,8 +34,25 @@ export default function DocumentDetail() {
   const { documents, tasks, completeTask, notify, updateDocument, deleteDocument } = useApp();
   const [confirm, setConfirm] = useState(false);
   const [editing, setEditing] = useState(false);
-  const doc = documents.find((d) => d.id === id);
+  const [remoteDocument, setRemoteDocument] = useState(null);
+  const [loading, setLoading] = useState(/^[a-f\d]{24}$/i.test(id));
+  const [loadError, setLoadError] = useState('');
+  const localDocument = documents.find((d) => d.id === id);
+  useEffect(() => {
+    if (!/^[a-f\d]{24}$/i.test(id)) return;
+    let active = true;
+    setLoading(true); setLoadError('');
+    documentService.get(id)
+      .then((document) => { if (active) setRemoteDocument(document); })
+      .catch(() => { if (active) setLoadError('Unable to load this document.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [id]);
+  const doc = remoteDocument || localDocument;
+  if (loading && !doc) return <div className="panel"><Skeleton lines={6} /></div>;
+  if (loadError && !doc) return <EmptyState title="Unable to load this document." text="Check your connection or return to Documents." action={<Button onClick={() => nav('/app/documents')}>Back to documents</Button>} />;
   if (!doc) return <EmptyState title="Document not found" text="It may have been deleted." action={<Button onClick={() => nav('/app/documents')}>Back to documents</Button>} />;
+  if (doc.isReal) return <SavedDocumentDetail document={doc} onBack={() => nav('/app/documents')} />;
   const related = tasks.filter((t) => t.source === doc.id);
   return (
     <>
@@ -195,5 +219,52 @@ export default function DocumentDetail() {
         </form>
       </Modal>
     </>
+  );
+}
+
+function SavedDocumentDetail({ document, onBack }) {
+  return (
+    <div className="saved-document-page">
+      <button className="back refined-back" onClick={onBack}><ArrowLeft size={15} />Back to documents</button>
+      <section className="saved-document-hero">
+        <div className="saved-document-icon"><FileText /></div>
+        <div className="saved-document-heading">
+          <span className="eyebrow">PERSONAL KNOWLEDGE RECORD</span>
+          <h1>{document.title}</h1>
+          <p>{document.type} information saved securely to your workspace.</p>
+          <div className="saved-document-badges"><Badge tone="neutral">{document.category}</Badge><span className="verified-state"><CheckCircle2 />Saved</span></div>
+        </div>
+        <div className="hero-security"><ShieldCheck /><span><strong>Private by design</strong><small>Visible only to your account</small></span></div>
+      </section>
+      <div className="saved-document-layout">
+        <div className="saved-document-main">
+          <section className="panel information-card">
+            <div className="section-head enhanced"><div><span className="section-icon"><FileText /></span><div><small>SOURCE CONTENT</small><h2>Saved information</h2></div></div><span className="content-count">{document.extractedText?.length || 0} characters</span></div>
+            <div className="document-text">{document.extractedText || 'No additional information was provided.'}</div>
+          </section>
+          <section className="panel future-card">
+            <span className="future-orb"><Layers3 /></span>
+            <div><small>NEXT STAGE</small><h2>Ready for intelligent organization</h2><p>AI analysis, deadlines and suggested actions will appear here when that capability is enabled.</p></div>
+            <span className="coming-pill">Coming next</span>
+          </section>
+          <section className="panel empty-work-card">
+            <div><span className="section-icon soft"><CheckCircle2 /></span><div><h2>Generated tasks</h2><p>No tasks have been generated from this information yet.</p></div></div>
+            <span>0 tasks</span>
+          </section>
+        </div>
+        <aside className="saved-document-aside">
+          <section className="panel record-overview">
+            <div className="aside-title"><h2>Record overview</h2><span className="status-dot">Active</span></div>
+            <dl>
+              <div><span><Layers3 /></span><dt>Source type</dt><dd>{document.type}</dd></div>
+              <div><span><FileText /></span><dt>Category</dt><dd>{document.category}</dd></div>
+              <div><span><CalendarDays /></span><dt>Created</dt><dd>{new Date(document.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</dd></div>
+              <div><span><Clock3 /></span><dt>Last updated</dt><dd>{new Date(document.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</dd></div>
+            </dl>
+          </section>
+          <section className="workspace-tip"><ShieldCheck /><div><strong>Your information is protected</strong><p>Every request is authenticated and scoped to your account.</p></div></section>
+        </aside>
+      </div>
+    </div>
   );
 }

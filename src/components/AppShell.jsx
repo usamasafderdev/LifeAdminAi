@@ -18,8 +18,8 @@ import {
   Timer,
   X,
 } from 'lucide-react';
-import { user } from '../data/mockData';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import CommandPalette from './CommandPalette';
 import { Button, IconButton } from './UI';
 
@@ -53,7 +53,9 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('la_sidebar') === 'collapsed',
   );
-  const { notifications, setNotifications, toast, logout } = useApp();
+  const { notifications, setNotifications, toast } = useApp();
+  const { user, logout } = useAuth();
+  const initials = (user?.fullName || 'LifeAdmin User').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   const navigate = useNavigate();
   const location = useLocation();
   const unread = notifications.filter((notification) => !notification.read).length;
@@ -127,10 +129,10 @@ export default function AppShell() {
           <span>{collapsed ? 'Expand' : 'Collapse sidebar'}</span>
         </button>
         <div className="sidebar-foot">
-          <div className="avatar">{user.initials}</div>
+          <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</div>
           <div>
-            <strong>{user.name}</strong>
-            <small>{user.email}</small>
+            <strong>{user?.fullName}</strong>
+            <small>{user?.email}</small>
           </div>
           <ChevronDown size={14} />
         </div>
@@ -223,7 +225,7 @@ export default function AppShell() {
                   setNotifs(false);
                 }}
               >
-                <span className="avatar">{user.initials}</span>
+                <span className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</span>
                 <ChevronDown size={13} />
               </button>
               <AnimatePresence>
@@ -235,7 +237,7 @@ export default function AppShell() {
                     exit={{ opacity: 0, y: -6, scale: 0.98 }}
                   >
                     <div className="profile-summary">
-                      <strong>{user.name}</strong>
+                      <strong>{user?.fullName}</strong>
                       <small>{user.email}</small>
                     </div>
                     <button onClick={() => navigate('/app/settings')}>Profile settings</button>

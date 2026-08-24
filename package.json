@@ -11,8 +11,10 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@react-oauth/google": "^0.13.5",
     "@vitejs/plugin-react": "latest",
     "autoprefixer": "latest",
+    "axios": "^1.19.0",
     "framer-motion": "^13.1.1",
     "lucide-react": "latest",
     "postcss": "latest",

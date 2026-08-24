@@ -10,7 +10,8 @@
     "start": "node src/server.js",
     "test:user-model": "node src/scripts/testUserModel.js",
     "test:auth": "node src/scripts/testAuth.js",
-    "test:google-auth": "node src/scripts/testGoogleAuth.js"
+    "test:google-auth": "node src/scripts/testGoogleAuth.js",
+    "test:documents": "node src/scripts/testDocuments.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

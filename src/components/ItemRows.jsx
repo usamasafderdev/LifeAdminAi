@@ -56,16 +56,16 @@ export function DocumentCard({ doc, view = 'grid' }) {
       <div className="doc-body">
         <div className="doc-top">
           <Badge tone="neutral">{doc.category}</Badge>
-          <PriorityBadge priority={doc.priority} />
+          {doc.priority && <PriorityBadge priority={doc.priority} />}
         </div>
         <h3>{doc.title}</h3>
-        <p>{doc.summary}</p>
+        <p>{doc.summary || 'No additional information was provided.'}</p>
         <div className="meta">
           <span>
             <Calendar size={13} />
-            {doc.deadline || 'No deadline'}
+            {doc.deadline || doc.date || 'Saved'}
           </span>
-          <span>{doc.status}</span>
+          <span>{doc.status || 'Saved'}</span>
         </div>
       </div>
     </article>
