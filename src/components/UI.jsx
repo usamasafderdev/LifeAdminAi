@@ -26,6 +26,7 @@ export function Badge({ children, tone }) {
   );
 }
 export function PriorityBadge({ priority }) {
+  if (!priority) return null;
   return <Badge tone={priority}>{priority}</Badge>;
 }
 export function PageHeader({ title, description, action }) {
