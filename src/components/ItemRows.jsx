@@ -1,4 +1,4 @@
-import { Calendar, Check, Clock3, ExternalLink, MoreHorizontal } from 'lucide-react';
+import { Calendar, Check, Clock3, ExternalLink, FileText, MoreHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Badge, CheckCircle, IconButton, PriorityBadge } from './UI';
@@ -51,7 +51,8 @@ export function DocumentCard({ doc, view = 'grid' }) {
   return (
     <article className={`document-card ${view}`} onClick={() => nav(`/app/documents/${doc.id}`)}>
       <div className="doc-icon">
-        <span>{doc.type === 'Invoice' ? 'PDF' : 'DOC'}</span>
+        <FileText />
+        <span>{doc.type || 'Record'}</span>
       </div>
       <div className="doc-body">
         <div className="doc-top">
@@ -59,11 +60,11 @@ export function DocumentCard({ doc, view = 'grid' }) {
           {doc.priority && <PriorityBadge priority={doc.priority} />}
         </div>
         <h3>{doc.title}</h3>
-        <p>{doc.summary || 'No additional information was provided.'}</p>
+        {view === 'grid' && <p>{doc.isReal ? 'Saved information' : doc.summary}</p>}
         <div className="meta">
           <span>
             <Calendar size={13} />
-            {doc.deadline || doc.date || 'Saved'}
+            {doc.deadline || (doc.date ? `Created ${doc.date}` : 'Saved')}
           </span>
           <span>{doc.status || 'Saved'}</span>
         </div>

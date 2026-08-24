@@ -131,12 +131,12 @@ function Upload({ method, process }) {
             <strong>{file.name}</strong>
             <span>{(file.size / 1024).toFixed(0)} KB · Ready to analyze</span>
           </div>
-          <Badge tone="success">Ready</Badge>
+          <Badge tone="neutral">Selected</Badge>
         </div>
       )}
       <div className="panel-footer">
-        <Button disabled={!file} onClick={process}>
-          Analyze {method ? 'image' : 'document'}
+        <Button disabled title="File uploads will be available in a later update">
+          Upload coming soon
         </Button>
       </div>
     </div>
@@ -144,6 +144,7 @@ function Upload({ method, process }) {
 }
 function Paste({ onSave }) {
   const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('other');
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -152,7 +153,7 @@ function Paste({ onSave }) {
     if (!text.trim()) return setError('Please enter information to save.');
     setSaving(true); setError('');
     try {
-      await onSave({ title: title.trim(), sourceType: 'text', category: 'other', extractedText: text.trim() });
+      await onSave({ title: title.trim(), sourceType: 'text', category, extractedText: text.trim() });
     } catch (requestError) {
       setError(getErrorMessage(requestError, 'Unable to save information. Please try again.'));
       setSaving(false);
@@ -163,6 +164,11 @@ function Paste({ onSave }) {
       {error && <div className="form-error" role="alert">{error}</div>}
       <Field label="Title">
         <input value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Internship Submission Notice" />
+      </Field>
+      <Field label="Category">
+        <select value={category} onChange={(event) => setCategory(event.target.value)}>
+          {documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+        </select>
       </Field>
       <Field label="Information to save">
         <textarea

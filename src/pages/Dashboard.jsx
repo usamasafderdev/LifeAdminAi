@@ -32,7 +32,7 @@ export default function Dashboard() {
     <>
       <PageHeader
         title={`Good morning, ${firstName}`}
-        description={`You have ${urgent.length} urgent items and ${upcoming.length} deadlines approaching.`}
+        description={urgent.length ? `${urgent.length} item${urgent.length === 1 ? '' : 's'} need your attention now.` : 'Nothing urgent needs your attention.'}
         action={
           <Button onClick={() => nav('/app/add')}>
             <Plus size={16} />
@@ -47,7 +47,7 @@ export default function Dashboard() {
           </span>
           <p>Urgent</p>
           <strong>{urgent.length}</strong>
-          <small>Needs action now</small>
+          <small>Need action now</small>
         </div>
         <div>
           <span className="metric-icon blue">
@@ -63,7 +63,7 @@ export default function Dashboard() {
           </span>
           <p>Documents</p>
           <strong>{documents.length}</strong>
-          <small>2 added this week</small>
+          <small>Saved records</small>
         </div>
         <div>
           <span className="metric-icon amber">
@@ -71,7 +71,7 @@ export default function Dashboard() {
           </span>
           <p>Open Tasks</p>
           <strong>{open.length}</strong>
-          <small>3 due this week</small>
+          <small>Still pending</small>
         </div>
       </section>
       <div className="dashboard-grid">
@@ -79,7 +79,7 @@ export default function Dashboard() {
           <div className="section-head">
             <div>
               <h2>Needs your attention</h2>
-              <p>Prioritized by deadline and consequence</p>
+              <p>Your highest-priority open items</p>
             </div>
             <button onClick={() => nav('/app/tasks')}>
               View all <ArrowRight size={14} />
@@ -141,7 +141,7 @@ export default function Dashboard() {
             </span>
             <div>
               <small>LIFEADMIN INSIGHT</small>
-              <p>Three university deadlines fall within the next 7 days.</p>
+              <p>{upcoming.length ? `${upcoming.length} deadline${upcoming.length === 1 ? '' : 's'} fall within the next 14 days.` : 'No deadlines fall within the next 14 days.'}</p>
             </div>
             <button onClick={() => nav('/app/tasks')}>
               Review priorities <ArrowRight />

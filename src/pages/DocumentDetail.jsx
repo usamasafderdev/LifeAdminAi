@@ -225,31 +225,24 @@ export default function DocumentDetail() {
 function SavedDocumentDetail({ document, onBack }) {
   return (
     <div className="saved-document-page">
-      <button className="back refined-back" onClick={onBack}><ArrowLeft size={15} />Back to documents</button>
-      <section className="saved-document-hero">
+      <button className="back refined-back" onClick={onBack}><ArrowLeft size={15} />Documents</button>
+      <header className="saved-document-header">
         <div className="saved-document-icon"><FileText /></div>
-        <div className="saved-document-heading">
-          <span className="eyebrow">PERSONAL KNOWLEDGE RECORD</span>
-          <h1>{document.title}</h1>
-          <p>{document.type} information saved securely to your workspace.</p>
-          <div className="saved-document-badges"><Badge tone="neutral">{document.category}</Badge><span className="verified-state"><CheckCircle2 />Saved</span></div>
-        </div>
-        <div className="hero-security"><ShieldCheck /><span><strong>Private by design</strong><small>Visible only to your account</small></span></div>
-      </section>
+        <div className="saved-document-heading"><h1>{document.title}</h1><p>{document.category} · {document.type} · Saved {new Date(document.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</p></div>
+        <span className="verified-state"><CheckCircle2 />Saved</span>
+      </header>
       <div className="saved-document-layout">
         <div className="saved-document-main">
           <section className="panel information-card">
-            <div className="section-head enhanced"><div><span className="section-icon"><FileText /></span><div><small>SOURCE CONTENT</small><h2>Saved information</h2></div></div><span className="content-count">{document.extractedText?.length || 0} characters</span></div>
+            <div className="section-head enhanced"><div><span className="section-icon"><FileText /></span><div><h2>Saved information</h2><p>Original content from this record</p></div></div><span className="content-count">{document.extractedText?.length || 0} characters</span></div>
             <div className="document-text">{document.extractedText || 'No additional information was provided.'}</div>
           </section>
-          <section className="panel future-card">
-            <span className="future-orb"><Layers3 /></span>
-            <div><small>NEXT STAGE</small><h2>Ready for intelligent organization</h2><p>AI analysis, deadlines and suggested actions will appear here when that capability is enabled.</p></div>
-            <span className="coming-pill">Coming next</span>
+          <section className="analysis-empty">
+            <span className="section-icon soft"><Layers3 /></span>
+            <div><h2>Analysis not available yet</h2><p>This record has been saved, but no deadlines, priorities or actions have been identified.</p></div>
           </section>
-          <section className="panel empty-work-card">
+          <section className="empty-work-card">
             <div><span className="section-icon soft"><CheckCircle2 /></span><div><h2>Generated tasks</h2><p>No tasks have been generated from this information yet.</p></div></div>
-            <span>0 tasks</span>
           </section>
         </div>
         <aside className="saved-document-aside">
@@ -262,7 +255,7 @@ function SavedDocumentDetail({ document, onBack }) {
               <div><span><Clock3 /></span><dt>Last updated</dt><dd>{new Date(document.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</dd></div>
             </dl>
           </section>
-          <section className="workspace-tip"><ShieldCheck /><div><strong>Your information is protected</strong><p>Every request is authenticated and scoped to your account.</p></div></section>
+          <section className="workspace-tip"><ShieldCheck /><div><strong>Private record</strong><p>Only your account can access this document.</p></div></section>
         </aside>
       </div>
     </div>

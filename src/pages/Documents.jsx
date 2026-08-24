@@ -37,7 +37,7 @@ export default function Documents() {
     <>
       <PageHeader
         title="Documents"
-        description="Everything LifeAdmin has organized for you."
+        description={`${documents.length} saved record${documents.length === 1 ? '' : 's'}`}
         action={
           <Button onClick={() => nav('/app/add')}>
             <Plus size={16} />

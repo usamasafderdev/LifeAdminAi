@@ -2,7 +2,7 @@ import { Bell, Bot, Download, Monitor, Moon, Palette, Shield, Sun, UserRound } f
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Button, ConfirmDialog, Field, PageHeader, Toggle } from '../components/UI';
+import { Button, Field, PageHeader, Toggle } from '../components/UI';
 
 const sections = [
   ['Profile', UserRound],
@@ -13,8 +13,7 @@ const sections = [
   ['Privacy & data', Shield],
 ];
 export default function Settings() {
-  const [active, setActive] = useState('Profile'),
-    [danger, setDanger] = useState(false);
+  const [active, setActive] = useState('Profile');
   const { theme, setTheme, notify } = useApp();
   const { user } = useAuth();
   const initials = (user?.fullName || 'LifeAdmin User').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
@@ -36,7 +35,7 @@ export default function Settings() {
               <SettingHead title="Profile" text="Update your personal details and timezone." />
               <div className="profile-edit">
                 <span className="avatar large">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</span>
-                <Button variant="secondary">Change photo</Button>
+                <div><strong>{user?.fullName}</strong><small>{user?.email}</small></div>
               </div>
               <div className="form-grid">
                 <Field label="Full name">
@@ -72,24 +71,22 @@ export default function Settings() {
             <>
               <SettingHead
                 title="AI settings"
-                text="AI analysis is configured and secured by your LifeAdmin backend."
+                text="AI analysis is not connected in this milestone."
               />
               <div className="form-grid">
                 <Field label="Provider">
-                  <input value="Groq" disabled />
+                  <input value="Not configured" disabled />
                 </Field>
                 <Field label="Model">
-                  <select>
-                    <option>Llama 3.3 70B</option>
-                    <option>Backend default</option>
+                  <select disabled>
+                    <option>Available in a future update</option>
                   </select>
                 </Field>
               </div>
               <div className="info-note">
                 <Bot />
-                API credentials are backend-managed and never exposed in this application.
+                These controls will become available when document analysis is implemented.
               </div>
-              <Save notify={notify} />
             </>
           )}
           {active === 'Notifications' && (
@@ -143,8 +140,8 @@ export default function Settings() {
                     <Download />
                     <strong>Export your data</strong>
                   </span>
-                  <Button variant="secondary" onClick={() => notify('Data export prepared')}>
-                    Export
+                  <Button variant="secondary" disabled title="Data export is not implemented yet">
+                    Coming later
                   </Button>
                 </div>
                 <div>
@@ -152,8 +149,8 @@ export default function Settings() {
                     <TrashIcon />
                     <strong>Clear chat history</strong>
                   </span>
-                  <Button variant="secondary" onClick={() => notify('Chat history cleared')}>
-                    Clear
+                  <Button variant="secondary" disabled title="Chat history management is not implemented yet">
+                    Coming later
                   </Button>
                 </div>
                 <div className="danger-zone">
@@ -161,8 +158,8 @@ export default function Settings() {
                     <Shield />
                     <strong>Delete account</strong>
                   </span>
-                  <Button variant="danger" onClick={() => setDanger(true)}>
-                    Delete account
+                  <Button variant="danger" disabled title="Account deletion is not implemented yet">
+                    Unavailable
                   </Button>
                 </div>
               </div>
@@ -170,13 +167,6 @@ export default function Settings() {
           )}
         </section>
       </div>
-      <ConfirmDialog
-        open={danger}
-        onClose={() => setDanger(false)}
-        onConfirm={() => notify('Demo account retained')}
-        title="Delete your account?"
-        text="This would permanently remove all documents, tasks and conversations in production."
-      />
     </>
   );
 }
