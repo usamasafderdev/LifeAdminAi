@@ -1,13 +1,12 @@
 import { Calendar, Check, Clock3, ExternalLink, MoreHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { documents } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import { Badge, CheckCircle, IconButton, PriorityBadge } from './UI';
 
 export function TaskRow({ task, onEdit }) {
-  const { completeTask, deleteTask, snoozeTask } = useApp();
+  const { completeTask, deleteTask, snoozeTask, documents } = useApp();
   const nav = useNavigate();
-  const source = documents.find((d) => d.id === task.source);
+  const source = documents.find((d) => d.id === (task.source || task.sourceDocumentId));
   return (
     <div className={`task-row ${task.status === 'Completed' ? 'completed' : ''}`}>
       <CheckCircle checked={task.status === 'Completed'} onClick={() => completeTask(task.id)} />

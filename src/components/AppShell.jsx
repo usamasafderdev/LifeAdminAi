@@ -53,7 +53,7 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('la_sidebar') === 'collapsed',
   );
-  const { notifications, setNotifications, toast } = useApp();
+  const { notifications, setNotifications, toast, logout } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const unread = notifications.filter((notification) => !notification.read).length;
@@ -240,7 +240,7 @@ export default function AppShell() {
                     </div>
                     <button onClick={() => navigate('/app/settings')}>Profile settings</button>
                     <hr />
-                    <button onClick={() => navigate('/login')}>Sign out</button>
+                    <button onClick={() => { logout(); navigate('/login', { replace: true }); }}>Sign out</button>
                   </motion.div>
                 )}
               </AnimatePresence>

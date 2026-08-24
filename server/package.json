@@ -1,0 +1,27 @@
+{
+  "name": "lifeadmin-api",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Backend foundation for LifeAdmin AI",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "test:user-model": "node src/scripts/testUserModel.js",
+    "test:auth": "node src/scripts/testAuth.js",
+    "test:google-auth": "node src/scripts/testGoogleAuth.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "google-auth-library": "^11.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.19.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

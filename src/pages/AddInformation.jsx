@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Field, PageHeader, PriorityBadge } from '../components/UI';
 import { useApp } from '../context/AppContext';
+import { dueLabel, formatDate } from '../utils/dates';
 
 const methods = [
   ['Document', FileText, 'PDF or TXT'],
@@ -17,7 +18,15 @@ export default function AddInformation() {
     [progress, setProgress] = useState(0);
   const timer = useRef();
   const nav = useNavigate();
-  const { notify } = useApp();
+  const { addDocument, setTasks, setReminders, notify } = useApp();
+  const saveAnalysis = (data) => {
+    const id = `doc-${Date.now()}`;
+    const doc = { id, title: data.title, category: data.type.includes('University') ? 'University' : data.type === 'Bill' ? 'Bills' : 'Personal', type: data.type, date: formatDate(new Date().toISOString()), deadline: formatDate(data.deadline), deadlineDate: data.deadline, priority: data.priority, status: data.actionRequired ? 'Action needed' : 'Reviewed', summary: data.summary, amount: data.amount, consequence: data.consequence, actions: data.actions, items: data.actions };
+    addDocument(doc);
+    if (data.actionRequired) setTasks(v => [...data.actions.map((title, i) => ({ id: `task-${Date.now()}-${i}`, title, category: doc.category, description: `Generated from ${doc.title}`, date: data.deadline, due: dueLabel(data.deadline), priority: data.priority, systemPriority: data.priority, status: 'Pending', source: id, sourceDocumentId: id, aiGenerated: true })), ...v]);
+    if (data.deadline) setReminders(v => [{ id: `rem-${Date.now()}`, title: doc.title, when: `${data.deadline}T09:00`, date: data.deadline, detail: `Due ${formatDate(data.deadline)}`, status: 'Upcoming', source: id, sourceDocumentId: id }, ...v]);
+    notify('Information saved to LifeAdmin'); nav(`/app/documents/${id}`);
+  };
   useEffect(() => () => clearInterval(timer.current), []);
   const process = () => {
     setStage('processing');
@@ -39,10 +48,7 @@ export default function AddInformation() {
     return (
       <Review
         onCancel={() => setStage('input')}
-        onSave={() => {
-          notify('Information saved to LifeAdmin');
-          nav('/app/documents');
-        }}
+        onSave={saveAnalysis}
       />
     );
   return (
@@ -77,12 +83,7 @@ export default function AddInformation() {
         ) : method === 2 ? (
           <Paste process={process} />
         ) : (
-          <Manual
-            onSave={() => {
-              notify('Manual entry saved');
-              nav('/app/tasks');
-            }}
-          />
+          <Manual onSave={(data) => { const id = `task-${Date.now()}`; setTasks(v => [{ id, ...data, due: dueLabel(data.date), status: 'Pending', source: null, systemPriority: data.priority }, ...v]); if (data.reminder) setReminders(v => [{ id: `rem-${Date.now()}`, title: data.title, date: data.date, when: `${data.date}T${data.time || '09:00'}`, detail: data.notes || 'Manual reminder', status: 'Upcoming', taskId: id }, ...v]); notify('Manual entry saved'); nav('/app/tasks'); }} />
         )}
       </section>
     </>
@@ -160,15 +161,15 @@ function Manual({ onSave }) {
       className="modal-form wide"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave();
+        const fd = new FormData(e.currentTarget); onSave(Object.fromEntries(fd.entries()));
       }}
     >
       <div className="form-grid">
         <Field label="Title">
-          <input required placeholder="Dentist Appointment" />
+          <input name="title" required placeholder="Dentist Appointment" />
         </Field>
         <Field label="Category">
-          <select>
+          <select name="category">
             <option>Appointment</option>
             <option>University</option>
             <option>Bills</option>
@@ -176,16 +177,16 @@ function Manual({ onSave }) {
           </select>
         </Field>
         <Field label="Date">
-          <input type="date" required />
+          <input name="date" type="date" required />
         </Field>
         <Field label="Time">
-          <input type="time" />
+          <input name="time" type="time" />
         </Field>
         <Field label="Amount">
-          <input placeholder="PKR 0" />
+          <input name="amount" placeholder="PKR 0" />
         </Field>
         <Field label="Priority">
-          <select>
+          <select name="priority">
             <option>MEDIUM</option>
             <option>URGENT</option>
             <option>HIGH</option>
@@ -194,10 +195,10 @@ function Manual({ onSave }) {
         </Field>
       </div>
       <Field label="Notes">
-        <textarea placeholder="Add any useful context" />
+        <textarea name="notes" placeholder="Add any useful context" />
       </Field>
       <label className="checkbox">
-        <input type="checkbox" defaultChecked /> Create a reminder
+        <input name="reminder" value="true" type="checkbox" defaultChecked /> Create a reminder
       </label>
       <div className="panel-footer">
         <Button>Save information</Button>
@@ -235,6 +236,8 @@ function Processing({ progress }) {
   );
 }
 function Review({ onCancel, onSave }) {
+  const [data, setData] = useState({ type: 'University Notice', priority: 'HIGH', title: 'Fall Semester Registration', deadline: '2026-09-05', amount: 'PKR 5,000', actionRequired: true, summary: 'Students must complete registration before September 5.', consequence: 'Registration may be blocked', actions: ['Pay registration fee','Complete registration form','Prepare CNIC copy','Submit documents'] });
+  const change = (key, value) => setData(v => ({ ...v, [key]: value }));
   return (
     <>
       <PageHeader
@@ -248,54 +251,49 @@ function Review({ onCancel, onSave }) {
           </div>
           <div className="form-grid">
             <Field label="Document type">
-              <select defaultValue="University Notice">
+              <select value={data.type} onChange={e => change('type', e.target.value)}>
                 <option>University Notice</option>
                 <option>Bill</option>
                 <option>Contract</option>
               </select>
             </Field>
             <Field label="Suggested priority">
-              <select defaultValue="HIGH">
+              <select value={data.priority} onChange={e => change('priority', e.target.value)}>
                 <option>URGENT</option>
                 <option>HIGH</option>
                 <option>MEDIUM</option>
               </select>
             </Field>
             <Field label="Title">
-              <input defaultValue="Fall Semester Registration" />
+              <input value={data.title} onChange={e => change('title', e.target.value)} />
             </Field>
             <Field label="Deadline">
-              <input type="date" defaultValue="2026-09-05" />
+              <input type="date" value={data.deadline} onChange={e => change('deadline', e.target.value)} />
             </Field>
             <Field label="Amount">
-              <input defaultValue="PKR 5,000" />
+              <input value={data.amount} onChange={e => change('amount', e.target.value)} />
             </Field>
             <Field label="Action required">
-              <select>
-                <option>Yes</option>
-                <option>No</option>
+              <select value={data.actionRequired ? 'Yes' : 'No'} onChange={e => change('actionRequired', e.target.value === 'Yes')}>
+                <option>Yes</option><option>No</option>
               </select>
             </Field>
           </div>
           <Field label="Summary">
-            <textarea defaultValue="Students must complete registration before September 5." />
+            <textarea value={data.summary} onChange={e => change('summary', e.target.value)} />
           </Field>
           <Field label="Consequence">
-            <input defaultValue="Registration may be blocked" />
+            <input value={data.consequence} onChange={e => change('consequence', e.target.value)} />
           </Field>
           <Field label="Required actions">
-            <textarea
-              defaultValue={
-                'Pay registration fee\nComplete registration form\nPrepare CNIC copy\nSubmit documents'
-              }
-            />
+            <textarea value={data.actions.join('\n')} onChange={e => change('actions', e.target.value.split('\n').filter(Boolean))} />
           </Field>
           <div className="panel-footer">
             <Button variant="ghost" onClick={onCancel}>
               Cancel
             </Button>
-            <Button variant="secondary">Save Draft</Button>
-            <Button onClick={onSave}>Confirm & Save</Button>
+            <Button variant="secondary" onClick={() => onSave({ ...data, actionRequired: false })}>Save Draft</Button>
+            <Button onClick={() => onSave(data)}>Confirm & Save</Button>
           </div>
         </section>
         <aside className="panel review-summary">

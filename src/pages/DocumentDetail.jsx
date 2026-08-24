@@ -5,28 +5,30 @@ import {
   Edit3,
   ExternalLink,
   FileText,
-  MoreHorizontal,
   Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { documents } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import {
   Badge,
   Button,
   CheckCircle,
   ConfirmDialog,
+  EmptyState, Field, Modal,
   PageHeader,
   PriorityBadge,
 } from '../components/UI';
+import { formatDate } from '../utils/dates';
 
 export default function DocumentDetail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { tasks, completeTask, notify } = useApp();
+  const { documents, tasks, completeTask, notify, updateDocument, deleteDocument } = useApp();
   const [confirm, setConfirm] = useState(false);
-  const doc = documents.find((d) => d.id === id) || documents[0];
+  const [editing, setEditing] = useState(false);
+  const doc = documents.find((d) => d.id === id);
+  if (!doc) return <EmptyState title="Document not found" text="It may have been deleted." action={<Button onClick={() => nav('/app/documents')}>Back to documents</Button>} />;
   const related = tasks.filter((t) => t.source === doc.id);
   return (
     <>
@@ -41,7 +43,7 @@ export default function DocumentDetail() {
           <div className="header-actions">
             <Button
               variant="secondary"
-              onClick={() => notify('Document information is ready to edit')}
+              onClick={() => setEditing(true)}
             >
               <Edit3 size={15} />
               Edit
@@ -50,9 +52,6 @@ export default function DocumentDetail() {
               <Bot size={16} />
               Chat with document
             </Button>
-            <button className="icon-btn">
-              <MoreHorizontal />
-            </button>
           </div>
         }
       />
@@ -166,7 +165,7 @@ export default function DocumentDetail() {
             </Button>
           </div>
           <div className="source-links">
-            <button>
+            <button onClick={() => setEditing(true)}>
               <Edit3 />
               Rename
             </button>
@@ -181,12 +180,20 @@ export default function DocumentDetail() {
         open={confirm}
         onClose={() => setConfirm(false)}
         onConfirm={() => {
-          notify('Document deleted');
+          deleteDocument(doc.id); notify('Document and related items deleted');
           nav('/app/documents');
         }}
         title="Delete document?"
-        text="This mock action will return you to the document list."
+        text="This will also delete tasks and reminders generated from this document."
       />
+      <Modal open={editing} onClose={() => setEditing(false)} title="Edit document">
+        <form className="modal-form" onSubmit={e => { e.preventDefault(); const values = Object.fromEntries(new FormData(e.currentTarget)); updateDocument(doc.id, { ...values, deadline: values.deadlineDate ? formatDate(values.deadlineDate) : doc.deadline }); setEditing(false); notify('Document updated'); }}>
+          <Field label="Title"><input name="title" defaultValue={doc.title} required /></Field>
+          <div className="form-grid"><Field label="Category"><input name="category" defaultValue={doc.category} /></Field><Field label="Priority"><select name="priority" defaultValue={doc.priority}>{['URGENT','HIGH','MEDIUM','LOW'].map(x => <option key={x}>{x}</option>)}</select></Field><Field label="Deadline"><input name="deadlineDate" type="date" defaultValue={doc.deadlineDate || ''} /></Field><Field label="Amount"><input name="amount" defaultValue={doc.amount || ''} /></Field></div>
+          <Field label="Summary"><textarea name="summary" defaultValue={doc.summary} /></Field>
+          <div className="modal-actions"><Button variant="secondary" type="button" onClick={() => setEditing(false)}>Cancel</Button><Button>Save changes</Button></div>
+        </form>
+      </Modal>
     </>
   );
 }

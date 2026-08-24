@@ -1,13 +1,12 @@
 import { FileText, ListChecks, Search as SearchIcon, Timer } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { documents } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import { Badge, EmptyState, PageHeader, SearchBox } from '../components/UI';
 
 export default function SearchPage() {
   const [q, setQ] = useState('');
-  const { tasks, reminders } = useApp();
+  const { documents, tasks, reminders } = useApp();
   const nav = useNavigate();
   const groups = [
     [

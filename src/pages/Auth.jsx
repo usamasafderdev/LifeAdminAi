@@ -2,6 +2,7 @@ import { ArrowRight, Check, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Field } from '../components/UI';
+import { useApp } from '../context/AppContext';
 
 export function Login() {
   return <Auth mode="login" />;
@@ -13,6 +14,7 @@ function Auth({ mode }) {
   const [show, setShow] = useState(false),
     [errors, setErrors] = useState({});
   const nav = useNavigate();
+  const { login } = useApp();
   const submit = (e) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget),
@@ -23,7 +25,7 @@ function Auth({ mode }) {
       next.confirm = 'Passwords do not match.';
     setErrors(next);
     if (!Object.keys(next).length) {
-      localStorage.setItem('la_auth', 'true');
+      login();
       nav('/app/dashboard');
     }
   };

@@ -1,9 +1,9 @@
-import { Grid2X2, List, Plus, SlidersHorizontal } from 'lucide-react';
+import { Grid2X2, List, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { documents } from '../data/mockData';
 import { DocumentCard } from '../components/ItemRows';
 import { Button, EmptyState, PageHeader, SearchBox } from '../components/UI';
+import { useApp } from '../context/AppContext';
 
 const cats = [
   'All',
@@ -17,6 +17,7 @@ const cats = [
 ];
 export default function Documents() {
   const nav = useNavigate();
+  const { documents } = useApp();
   const [query, setQuery] = useState(''),
     [category, setCategory] = useState('All'),
     [priority, setPriority] = useState('All'),
@@ -53,10 +54,6 @@ export default function Documents() {
             <option>MEDIUM</option>
             <option>LOW</option>
           </select>
-          <button>
-            <SlidersHorizontal size={15} />
-            Filters
-          </button>
           <div className="segmented">
             <button
               className={view === 'grid' ? 'active' : ''}

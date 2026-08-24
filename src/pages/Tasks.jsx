@@ -11,11 +11,14 @@ import {
   SearchBox,
 } from '../components/UI';
 import { useApp } from '../context/AppContext';
+import { DEMO_TODAY, dueLabel, isOverdue, isThisWeek } from '../utils/dates';
 
 export default function Tasks() {
   const { tasks, setTasks, notify } = useApp();
   const [tab, setTab] = useState('All'),
     [query, setQuery] = useState(''),
+    [priority, setPriority] = useState('All'),
+    [category, setCategory] = useState('All'),
     [edit, setEdit] = useState(null);
   const filtered = useMemo(
     () =>
@@ -25,13 +28,15 @@ export default function Tasks() {
             (tab === 'Completed'
               ? t.status === 'Completed'
               : tab === 'Overdue'
-                ? t.date < '2026-08-21' && t.status !== 'Completed'
+                ? isOverdue(t.date) && t.status !== 'Completed'
                 : tab === 'Today'
-                  ? t.date === '2026-08-21'
-                  : t.date <= '2026-08-28')) &&
+                  ? t.date === DEMO_TODAY
+                  : isThisWeek(t.date))) &&
+          (priority === 'All' || (t.userPriority || t.systemPriority || t.priority) === priority) &&
+          (category === 'All' || t.category === category) &&
           t.title.toLowerCase().includes(query.toLowerCase()),
       ),
-    [tasks, tab, query],
+    [tasks, tab, query, priority, category],
   );
   const save = (e) => {
     e.preventDefault();
@@ -40,15 +45,15 @@ export default function Tasks() {
       title: fd.get('title'),
       priority: fd.get('priority'),
       status: fd.get('status'),
+      description: fd.get('description'), category: fd.get('category'), date: fd.get('date'),
+      due: dueLabel(fd.get('date')), userPriority: fd.get('priority'),
     };
     if (edit.id === 'new')
       setTasks((v) => [
         {
           id: crypto.randomUUID(),
           ...values,
-          category: 'Personal',
-          due: 'No date',
-          date: '2026-12-31',
+          systemPriority: values.priority,
           source: null,
         },
         ...v,
@@ -75,15 +80,15 @@ export default function Tasks() {
         {[
           [
             'Today',
-            tasks.filter((t) => t.date === '2026-08-21' && t.status !== 'Completed').length,
+            tasks.filter((t) => t.date === DEMO_TODAY && t.status !== 'Completed').length,
           ],
           [
             'Upcoming',
-            tasks.filter((t) => t.date > '2026-08-21' && t.status !== 'Completed').length,
+            tasks.filter((t) => t.date > DEMO_TODAY && t.status !== 'Completed').length,
           ],
           [
             'Overdue',
-            tasks.filter((t) => t.date < '2026-08-21' && t.status !== 'Completed').length,
+            tasks.filter((t) => isOverdue(t.date) && t.status !== 'Completed').length,
           ],
           ['Completed', tasks.filter((t) => t.status === 'Completed').length],
         ].map((x) => (
@@ -96,15 +101,13 @@ export default function Tasks() {
       <div className="toolbar">
         <SearchBox value={query} onChange={setQuery} placeholder="Search tasks…" />
         <div className="tool-filters">
-          <select>
-            <option>All priorities</option>
-            <option>Urgent</option>
-            <option>High</option>
+          <select value={priority} onChange={e => setPriority(e.target.value)}>
+            <option value="All">All priorities</option>
+            {['URGENT','HIGH','MEDIUM','LOW'].map(x => <option key={x}>{x}</option>)}
           </select>
-          <select>
-            <option>All categories</option>
-            <option>University</option>
-            <option>Bills</option>
+          <select value={category} onChange={e => setCategory(e.target.value)}>
+            <option value="All">All categories</option>
+            {[...new Set(tasks.map(t => t.category))].sort().map(x => <option key={x}>{x}</option>)}
           </select>
         </div>
       </div>
@@ -134,7 +137,10 @@ export default function Tasks() {
           <Field label="Title">
             <input name="title" defaultValue={edit?.title} required />
           </Field>
+          <Field label="Description"><textarea name="description" defaultValue={edit?.description || ''} /></Field>
           <div className="form-grid">
+            <Field label="Category"><select name="category" defaultValue={edit?.category || 'Personal'}>{[...new Set([...tasks.map(t => t.category), 'Personal'])].map(x => <option key={x}>{x}</option>)}</select></Field>
+            <Field label="Due date"><input name="date" type="date" defaultValue={edit?.date || DEMO_TODAY} required /></Field>
             <Field label="Priority">
               <select name="priority" defaultValue={edit?.priority}>
                 <option>URGENT</option>
@@ -155,7 +161,7 @@ export default function Tasks() {
               <span>AI Generated</span>
               <strong>Yes</strong>
               <span>System priority</span>
-              <PriorityBadge priority="MEDIUM" />
+              <PriorityBadge priority={edit?.systemPriority || edit?.priority} />
               <span>Your priority</span>
               <PriorityBadge priority={edit?.priority} />
             </div>

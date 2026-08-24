@@ -11,20 +11,25 @@ import {
   Upload,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { documents } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import { Button, PageHeader, PriorityBadge, CheckCircle } from '../components/UI';
+import { daysUntil, isOverdue } from '../utils/dates';
 
 export default function Dashboard() {
   const nav = useNavigate();
-  const { tasks, completeTask } = useApp();
-  const urgent = tasks.filter((t) => t.priority === 'URGENT' && t.status !== 'Completed');
+  const { documents, tasks, completeTask } = useApp();
+  const effective = (t) => t.userPriority || t.systemPriority || t.priority;
+  const urgent = tasks.filter((t) => effective(t) === 'URGENT' && t.status !== 'Completed');
   const open = tasks.filter((t) => t.status !== 'Completed');
+  const completed = tasks.filter((t) => t.status === 'Completed');
+  const overdue = open.filter((t) => isOverdue(t.date));
+  const upcoming = open.filter((t) => { const d = daysUntil(t.date); return d !== null && d >= 0 && d <= 14; });
+  const percent = tasks.length ? Math.round(completed.length / tasks.length * 100) : 0;
   return (
     <>
       <PageHeader
         title="Good morning, Haris"
-        description={`You have ${urgent.length} urgent items and 4 deadlines approaching.`}
+        description={`You have ${urgent.length} urgent items and ${upcoming.length} deadlines approaching.`}
         action={
           <Button onClick={() => nav('/app/add')}>
             <Plus size={16} />
@@ -46,7 +51,7 @@ export default function Dashboard() {
             <CalendarDays />
           </span>
           <p>Upcoming</p>
-          <strong>8</strong>
+          <strong>{upcoming.length}</strong>
           <small>Next 14 days</small>
         </div>
         <div>
@@ -105,13 +110,13 @@ export default function Dashboard() {
           </div>
           <div className="progress-visual modern-progress">
             <div className="progress-number">
-              <strong>58%</strong>
+              <strong>{percent}%</strong>
               <span>of August tasks complete</span>
             </div>
             <div className="legend">
               <p>
                 <i className="green-dot" />
-                Completed <b>18</b>
+                Completed <b>{completed.length}</b>
               </p>
               <p>
                 <i className="blue-dot" />
@@ -119,14 +124,13 @@ export default function Dashboard() {
               </p>
               <p>
                 <i className="red-dot" />
-                Overdue <b>3</b>
+                Overdue <b>{overdue.length}</b>
               </p>
             </div>
           </div>
           <div className="segmented-progress">
-            <i className="complete" style={{ width: '58%' }} />
-            <i className="pending" style={{ width: '32%' }} />
-            <i className="overdue" style={{ width: '10%' }} />
+            <i className="complete" style={{ width: `${percent}%` }} />
+            <i className="pending" style={{ width: `${100 - percent}%` }} />
           </div>
           <div className="ai-insight">
             <span>
@@ -152,12 +156,7 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="timeline">
-            {[
-              ['28', 'AUG', 'Dentist Appointment', '4:30 PM'],
-              ['10', 'SEP', 'Internship Report', 'University'],
-              ['20', 'OCT', 'Laptop Warranty', 'Expires'],
-              ['12', 'NOV', 'Passport Renewal', 'Personal'],
-            ].map((x) => (
+            {open.filter(t => t.date).sort((a,b) => a.date.localeCompare(b.date)).slice(0,4).map((t) => { const d = new Date(`${t.date}T12:00:00`); const x = [String(d.getDate()), d.toLocaleString('en-US',{month:'short'}).toUpperCase(), t.title, t.category]; return (
               <div key={x[2]}>
                 <time>
                   <b>{x[0]}</b>
@@ -169,7 +168,7 @@ export default function Dashboard() {
                   <span>{x[3]}</span>
                 </p>
               </div>
-            ))}
+            ); })}
           </div>
         </section>
         <section className="panel">
