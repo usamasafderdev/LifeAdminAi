@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 import Document, { DOCUMENT_CATEGORIES } from '../models/Document.js';
+import { storedFilePath } from '../config/upload.js';
+import { deleteFileIfExists, resolveStoredFile } from '../utils/fileUtils.js';
+import { extractPdfText } from '../services/pdfExtractionService.js';
+import { extractTextFromImage } from '../services/ocrService.js';
 
 const JSON_SOURCE_TYPES = ['text', 'manual'];
 const MAX_TITLE_LENGTH = 200;
@@ -72,6 +76,74 @@ export async function createDocument(req, res, next) {
   }
 }
 
+export async function uploadDocument(req, res, next) {
+  const filePath = req.file ? storedFilePath(req.file) : null;
+  try {
+    if (!req.file) return res.status(400).json(invalid('A file is required'));
+
+    const suppliedTitle = typeof req.body?.title === 'string' ? req.body.title.trim() : null;
+    if (suppliedTitle !== null && !suppliedTitle) {
+      await deleteFileIfExists(filePath);
+      return res.status(400).json(invalid('Title cannot be empty'));
+    }
+    const fallbackTitle = req.file.originalname.replace(/\.[^.]+$/, '').trim();
+    const title = suppliedTitle ?? fallbackTitle;
+    if (!title || title.length > MAX_TITLE_LENGTH) {
+      await deleteFileIfExists(filePath);
+      return res.status(400).json(invalid(title ? `Title cannot exceed ${MAX_TITLE_LENGTH} characters` : 'Title is required'));
+    }
+
+    const category = typeof req.body?.category === 'string' && req.body.category
+      ? req.body.category
+      : 'other';
+    if (!DOCUMENT_CATEGORIES.includes(category)) {
+      await deleteFileIfExists(filePath);
+      return res.status(400).json(invalid('Invalid document category'));
+    }
+
+    const sourceType = req.file.mimetype === 'application/pdf' ? 'pdf' : 'image';
+    let extractedText = '';
+    if (sourceType === 'pdf') {
+      const trustedPath = resolveStoredFile(filePath);
+      if (!trustedPath) throw new Error('Stored upload path could not be resolved');
+      ({ text: extractedText } = await extractPdfText(trustedPath));
+    } else {
+      const trustedPath = resolveStoredFile(filePath);
+      if (!trustedPath) throw new Error('Stored upload path could not be resolved');
+      ({ text: extractedText } = await extractTextFromImage(trustedPath));
+    }
+    const document = await Document.create({
+      userId: req.user._id,
+      title,
+      sourceType,
+      category,
+      originalFilename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      filePath,
+      extractedText,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: !extractedText
+        ? sourceType === 'pdf'
+          ? 'PDF uploaded, but no extractable text was found'
+          : 'Image uploaded, but no readable text was detected'
+        : sourceType === 'image' ? 'Image processed successfully' : 'Document uploaded successfully',
+      document,
+    });
+  } catch (error) {
+    if (filePath) {
+      try {
+        await deleteFileIfExists(filePath);
+      } catch {
+        // Preserve the original request failure while avoiding filesystem details in the response.
+      }
+    }
+    return next(error);
+  }
+}
+
 export async function listDocuments(req, res, next) {
   try {
     const documents = await Document.find({ userId: req.user._id }).sort({ createdAt: -1 });
@@ -87,6 +159,25 @@ export async function getDocument(req, res, next) {
     const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
     if (!document) return res.status(404).json(invalid('Document not found'));
     return res.status(200).json({ success: true, document });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getDocumentFile(req, res, next) {
+  try {
+    if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!document?.filePath) return res.status(404).json(invalid('Document file not found'));
+    const trustedPath = resolveStoredFile(document.filePath);
+    if (!trustedPath) return res.status(404).json(invalid('Document file not found'));
+    res.set({
+      'Content-Type': document.mimeType || 'application/octet-stream',
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(document.originalFilename || 'document.pdf')}`,
+      'Cache-Control': 'private, max-age=300',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return res.sendFile(trustedPath);
   } catch (error) {
     return next(error);
   }
@@ -118,8 +209,10 @@ export async function updateDocument(req, res, next) {
 export async function deleteDocument(req, res, next) {
   try {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
-    const document = await Document.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
     if (!document) return res.status(404).json(invalid('Document not found'));
+    await Document.deleteOne({ _id: document._id, userId: req.user._id });
+    if (document.filePath) await deleteFileIfExists(document.filePath);
     return res.status(200).json({ success: true, message: 'Document deleted successfully' });
   } catch (error) {
     return next(error);

@@ -11,7 +11,10 @@
     "test:user-model": "node src/scripts/testUserModel.js",
     "test:auth": "node src/scripts/testAuth.js",
     "test:google-auth": "node src/scripts/testGoogleAuth.js",
-    "test:documents": "node src/scripts/testDocuments.js"
+    "test:documents": "node src/scripts/testDocuments.js",
+    "test:uploads": "node src/scripts/testUploads.js",
+    "test:pdf": "node src/scripts/testPdfExtraction.js",
+    "test:ocr": "node src/scripts/testOcr.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -20,7 +23,11 @@
     "express": "^5.1.0",
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.19.1"
+    "mongoose": "^8.19.1",
+    "multer": "^2.2.0",
+    "pdf-parse": "^2.4.5",
+    "sharp": "^0.35.3",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

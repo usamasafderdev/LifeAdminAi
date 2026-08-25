@@ -38,8 +38,15 @@ export function AppProvider({ children }) {
   useEffect(() => localStorage.setItem('la_conversations', JSON.stringify(conversations)), [conversations]);
   useEffect(() => { localStorage.setItem('la_theme', theme); const media = window.matchMedia('(prefers-color-scheme: dark)'); const apply = () => document.documentElement.classList.toggle('dark', theme === 'dark' || (theme === 'system' && media.matches)); apply(); media.addEventListener('change', apply); return () => media.removeEventListener('change', apply); }, [theme]);
   const addDocument = (doc) => { setDocuments((v) => [doc, ...v]); return doc; };
-  const updateDocument = (id, values) => setDocuments((v) => v.map((d) => d.id === id ? { ...d, ...values } : d));
-  const deleteDocument = (id) => { setDocuments((v) => v.filter((d) => d.id !== id)); setTasks((v) => v.filter((t) => t.source !== id && t.sourceDocumentId !== id)); setReminders((v) => v.filter((r) => r.source !== id && r.sourceDocumentId !== id)); };
+  const updateDocument = async (id, values) => {
+    const updated = await documentService.update(id, values);
+    setDocuments((current) => current.map((document) => document.id === id ? updated : document));
+    return updated;
+  };
+  const deleteDocument = async (id) => {
+    await documentService.remove(id);
+    setDocuments((current) => current.filter((document) => document.id !== id));
+  };
   const completeTask = (id) => { setTasks((v) => v.map((t) => t.id === id ? { ...t, status: t.status === 'Completed' ? 'Pending' : 'Completed' } : t)); notify('Task updated'); };
   const deleteTask = (id) => { setTasks((v) => v.filter((t) => t.id !== id)); notify('Task deleted'); };
   const snoozeTask = (id) => { setTasks((v) => v.map((t) => t.id === id ? { ...t, due: 'Snoozed until tomorrow' } : t)); notify('Task snoozed'); };

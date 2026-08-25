@@ -1,348 +1,51 @@
-import { Check, FileImage, FileText, Keyboard, Plus, UploadCloud } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { FileImage, FileText, Keyboard, Plus, UploadCloud, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Badge, Button, Field, PageHeader, PriorityBadge } from '../components/UI';
+import { Badge, Button, Field, PageHeader } from '../components/UI';
 import { useApp } from '../context/AppContext';
-import { dueLabel, formatDate } from '../utils/dates';
-import { documentCategories, documentService } from '../services/documentService';
 import { getErrorMessage } from '../services/api';
+import { documentCategories, documentService } from '../services/documentService';
 
-const methods = [
-  ['Document', FileText, 'PDF or TXT'],
-  ['Image', FileImage, 'PNG, JPG or screenshot'],
-  ['Paste text', Keyboard, 'Analyze copied information'],
-  ['Manual entry', Plus, 'Create a structured record'],
-];
+const methods = [['Document', FileText, 'Upload a digital PDF'], ['Image', FileImage, 'Upload and read an image'], ['Paste text', Keyboard, 'Save copied information'], ['Manual entry', Plus, 'Create a structured record']];
+
 export default function AddInformation() {
   const [params] = useSearchParams();
-  const [method, setMethod] = useState(Number(params.get('method')) || 0),
-    [stage, setStage] = useState('input'),
-    [progress, setProgress] = useState(0);
-  const timer = useRef();
+  const [method, setMethod] = useState(Number(params.get('method')) || 0);
   const nav = useNavigate();
-  const { addDocument, setDocuments, setTasks, setReminders, notify } = useApp();
-  const saveRealDocument = async (payload) => {
-    const document = await documentService.create(payload);
-    setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)]);
-    notify('Information saved successfully');
-    nav(`/app/documents/${document.id}`);
-  };
-  const saveAnalysis = (data) => {
-    const id = `doc-${Date.now()}`;
-    const doc = { id, title: data.title, category: data.type.includes('University') ? 'University' : data.type === 'Bill' ? 'Bills' : 'Personal', type: data.type, date: formatDate(new Date().toISOString()), deadline: formatDate(data.deadline), deadlineDate: data.deadline, priority: data.priority, status: data.actionRequired ? 'Action needed' : 'Reviewed', summary: data.summary, amount: data.amount, consequence: data.consequence, actions: data.actions, items: data.actions };
-    addDocument(doc);
-    if (data.actionRequired) setTasks(v => [...data.actions.map((title, i) => ({ id: `task-${Date.now()}-${i}`, title, category: doc.category, description: `Generated from ${doc.title}`, date: data.deadline, due: dueLabel(data.deadline), priority: data.priority, systemPriority: data.priority, status: 'Pending', source: id, sourceDocumentId: id, aiGenerated: true })), ...v]);
-    if (data.deadline) setReminders(v => [{ id: `rem-${Date.now()}`, title: doc.title, when: `${data.deadline}T09:00`, date: data.deadline, detail: `Due ${formatDate(data.deadline)}`, status: 'Upcoming', source: id, sourceDocumentId: id }, ...v]);
-    notify('Information saved to LifeAdmin'); nav(`/app/documents/${id}`);
-  };
-  useEffect(() => () => clearInterval(timer.current), []);
-  const process = () => {
-    setStage('processing');
-    setProgress(0);
-    timer.current = setInterval(
-      () =>
-        setProgress((p) => {
-          if (p >= 100) {
-            clearInterval(timer.current);
-            setTimeout(() => setStage('review'), 300);
-            return 100;
-          }
-          return p + 20;
-        }),
-      350,
-    );
-  };
-  if (stage === 'review')
-    return (
-      <Review
-        onCancel={() => setStage('input')}
-        onSave={saveAnalysis}
-      />
-    );
-  return (
-    <>
-      <PageHeader
-        title="Add Information"
-        description="Turn documents, screenshots, text or manual entries into organized LifeAdmin data."
-      />
-      <div className="method-tabs">
-        {methods.map(([name, Icon, desc], i) => (
-          <button
-            key={name}
-            className={method === i ? 'active' : ''}
-            onClick={() => {
-              setMethod(i);
-              setStage('input');
-            }}
-          >
-            <Icon size={18} />
-            <span>
-              <strong>{name}</strong>
-              <small>{desc}</small>
-            </span>
-          </button>
-        ))}
-      </div>
-      <section className="panel add-panel">
-        {stage === 'processing' ? (
-          <Processing progress={progress} />
-        ) : method < 2 ? (
-          <Upload method={method} process={process} />
-        ) : method === 2 ? (
-          <Paste onSave={saveRealDocument} />
-        ) : (
-          <Manual onSave={saveRealDocument} />
-        )}
-      </section>
-    </>
-  );
+  const { setDocuments, notify } = useApp();
+  const addToWorkspace = (document, message) => { setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)]); notify(message); nav(`/app/documents/${document.id}`); };
+  const saveEntry = async (payload) => addToWorkspace(await documentService.create(payload), 'Information saved successfully');
+  const saveUpload = async (formData) => { const result = await documentService.uploadDocument(formData); addToWorkspace(result.document, result.message); };
+  return <><PageHeader title="Add Information" description="Save a PDF, image, text, or manual record to your workspace." /><div className="method-tabs">{methods.map(([name, Icon, description], index) => <button key={name} className={method === index ? 'active' : ''} onClick={() => setMethod(index)}><Icon size={18} /><span><strong>{name}</strong><small>{description}</small></span></button>)}</div><section className="panel add-panel">{method < 2 ? <Upload key={method} method={method} onSave={saveUpload} /> : method === 2 ? <Paste onSave={saveEntry} /> : <Manual onSave={saveEntry} />}</section></>;
 }
 
-function Upload({ method, process }) {
-  const [file, setFile] = useState(null);
-  return (
-    <div className="upload-content">
-      <div
-        className="dropzone"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          setFile(e.dataTransfer.files[0]);
-        }}
-      >
-        <UploadCloud size={28} />
-        <h2>Drop your {method ? 'image' : 'document'} here</h2>
-        <p>or click to browse from your computer</p>
-        <label className="btn btn-secondary">
-          Browse files
-          <input
-            type="file"
-            accept={method ? 'image/png,image/jpeg' : '.pdf,.txt'}
-            hidden
-            onChange={(e) => setFile(e.target.files[0])}
-          />
-        </label>
-        <small>{method ? 'PNG, JPG or JPEG' : 'PDF or TXT'} · Maximum 10 MB</small>
-      </div>
-      {file && (
-        <div className="selected-file">
-          <FileText />
-          <div>
-            <strong>{file.name}</strong>
-            <span>{(file.size / 1024).toFixed(0)} KB · Ready to analyze</span>
-          </div>
-          <Badge tone="neutral">Selected</Badge>
-        </div>
-      )}
-      <div className="panel-footer">
-        <Button disabled title="File uploads will be available in a later update">
-          Upload coming soon
-        </Button>
-      </div>
-    </div>
-  );
-}
-function Paste({ onSave }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('other');
-  const [text, setText] = useState('');
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const submit = async () => {
-    if (!title.trim()) return setError('Please enter a title.');
-    if (!text.trim()) return setError('Please enter information to save.');
-    setSaving(true); setError('');
-    try {
-      await onSave({ title: title.trim(), sourceType: 'text', category, extractedText: text.trim() });
-    } catch (requestError) {
-      setError(getErrorMessage(requestError, 'Unable to save information. Please try again.'));
-      setSaving(false);
-    }
+function Upload({ method, onSave }) {
+  const [file, setFile] = useState(null), [title, setTitle] = useState(''), [category, setCategory] = useState('other'), [error, setError] = useState(''), [uploading, setUploading] = useState(false), [previewUrl, setPreviewUrl] = useState('');
+  const imageMode = method === 1;
+  useEffect(() => { if (!imageMode || !file) { setPreviewUrl(''); return undefined; } const url = URL.createObjectURL(file); setPreviewUrl(url); return () => URL.revokeObjectURL(url); }, [file, imageMode]);
+  const chooseFile = (nextFile) => {
+    setError('');
+    if (!nextFile) return setFile(null);
+    const validImage = ['image/jpeg', 'image/png', 'image/webp'].includes(nextFile.type) && /\.(jpe?g|png|webp)$/i.test(nextFile.name);
+    const validPdf = nextFile.type === 'application/pdf' && /\.pdf$/i.test(nextFile.name);
+    if (imageMode ? !validImage : !validPdf) { setFile(null); return setError(imageMode ? 'Please select a JPEG, PNG, or WebP image.' : 'Please select a PDF file.'); }
+    if (nextFile.size > 10 * 1024 * 1024) { setFile(null); return setError(`${imageMode ? 'Image' : 'PDF'} must be 10 MB or smaller.`); }
+    return setFile(nextFile);
   };
-  return (
-    <div className="paste-form">
-      {error && <div className="form-error" role="alert">{error}</div>}
-      <Field label="Title">
-        <input value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Internship Submission Notice" />
-      </Field>
-      <Field label="Category">
-        <select value={category} onChange={(event) => setCategory(event.target.value)}>
-          {documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-        </select>
-      </Field>
-      <Field label="Information to save">
-        <textarea
-          rows="10"
-          maxLength={200000}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Please submit your internship report before September 10."
-        />
-        <small className="char-count">{text.length} characters</small>
-      </Field>
-      <div className="panel-footer">
-        <Button disabled={saving} onClick={submit}>
-          {saving && <span className="button-spinner" />} {saving ? 'Saving information' : 'Save information'}
-        </Button>
-      </div>
-    </div>
-  );
+  const submit = async (event) => { event.preventDefault(); if (!file || uploading) return; const formData = new FormData(); formData.append('file', file); if (title.trim()) formData.append('title', title.trim()); formData.append('category', category); setUploading(true); setError(''); try { await onSave(formData); } catch (requestError) { setError(getErrorMessage(requestError, 'Unable to upload document. Please try again.')); setUploading(false); } };
+  return <form className="upload-content" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className={`dropzone ${imageMode && previewUrl ? 'with-image-preview' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseFile(event.dataTransfer.files[0]); }}>{previewUrl ? <img className="local-image-preview" src={previewUrl} alt="Selected upload preview" /> : <UploadCloud size={28} />}<h2>{imageMode ? 'Drop your image here' : 'Drop your PDF here'}</h2><p>{imageMode ? 'We will securely read printed English text from the image.' : 'Choose a digital PDF containing selectable text.'}</p><label className="btn btn-secondary">{file ? 'Replace file' : 'Browse files'}<input type="file" accept={imageMode ? '.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp' : '.pdf,application/pdf'} hidden disabled={uploading} onChange={(event) => chooseFile(event.target.files[0])} /></label><small>{imageMode ? 'JPEG, PNG or WebP' : 'PDF only'} · Maximum 10 MB</small></div>{file && <div className="selected-file">{imageMode ? <FileImage /> : <FileText />}<div><strong>{file.name}</strong><span>{formatFileSize(file.size)} · Ready to upload</span></div><Badge tone="neutral">Selected</Badge><button type="button" className="remove-file" onClick={() => setFile(null)} aria-label={`Remove selected ${imageMode ? 'image' : 'PDF'}`}><X /></button></div>}<div className="form-grid upload-fields"><Field label="Title" hint="Optional — the filename is used if blank"><input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder={imageMode ? 'Electricity bill' : 'Internship submission notice'} /></Field><Field label="Category"><select value={category} onChange={(event) => setCategory(event.target.value)}>{documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field></div>{uploading && imageMode && <div className="ocr-working" role="status"><span className="button-spinner" /><div><strong>Reading text from image…</strong><small>OCR may take a moment. Please keep this page open.</small></div></div>}<div className="panel-footer"><Button disabled={!file || uploading}>{uploading && <span className="button-spinner" />}{uploading ? imageMode ? 'Reading text from image…' : 'Uploading and reading PDF…' : imageMode ? 'Upload and read image' : 'Upload PDF'}</Button></div></form>;
 }
+
+function Paste({ onSave }) {
+  const [title, setTitle] = useState(''), [category, setCategory] = useState('other'), [text, setText] = useState(''), [error, setError] = useState(''), [saving, setSaving] = useState(false);
+  const submit = async () => { if (!title.trim()) return setError('Please enter a title.'); if (!text.trim()) return setError('Please enter information to save.'); setSaving(true); setError(''); try { await onSave({ title: title.trim(), sourceType: 'text', category, extractedText: text.trim() }); } catch (requestError) { setError(getErrorMessage(requestError, 'Unable to save information. Please try again.')); setSaving(false); } };
+  return <div className="paste-form">{error && <div className="form-error" role="alert">{error}</div>}<Field label="Title"><input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder="Internship Submission Notice" /></Field><Field label="Category"><select value={category} onChange={(event) => setCategory(event.target.value)}>{documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field><Field label="Information to save"><textarea rows="10" maxLength={200000} value={text} onChange={(event) => setText(event.target.value)} placeholder="Please submit your internship report before September 10." /><small className="char-count">{text.length} characters</small></Field><div className="panel-footer"><Button disabled={saving} onClick={submit}>{saving && <span className="button-spinner" />}{saving ? 'Saving information' : 'Save information'}</Button></div></div>;
+}
+
 function Manual({ onSave }) {
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  return (
-    <form
-      className="modal-form wide"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (saving) return;
-        const data = Object.fromEntries(new FormData(e.currentTarget));
-        const details = [
-          data.date && `Date: ${data.date}`,
-          data.time && `Time: ${data.time}`,
-          data.notes?.trim() && `Notes: ${data.notes.trim()}`,
-        ].filter(Boolean).join('\n');
-        if (!data.title?.trim()) return setError('Please enter a title.');
-        if (!details) return setError('Please enter a date, time, or notes to save.');
-        setSaving(true); setError('');
-        onSave({ title: data.title.trim(), sourceType: 'manual', category: data.category, extractedText: details })
-          .catch((requestError) => { setError(getErrorMessage(requestError, 'Unable to save information. Please try again.')); setSaving(false); });
-      }}
-    >
-      {error && <div className="form-error" role="alert">{error}</div>}
-      <div className="form-grid">
-        <Field label="Title">
-          <input name="title" required placeholder="Dentist Appointment" />
-        </Field>
-        <Field label="Category">
-          <select name="category" defaultValue="appointment">
-            {documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-          </select>
-        </Field>
-        <Field label="Date">
-          <input name="date" type="date" />
-        </Field>
-        <Field label="Time">
-          <input name="time" type="time" />
-        </Field>
-      </div>
-      <Field label="Notes">
-        <textarea name="notes" placeholder="Add any useful context" />
-      </Field>
-      <p className="muted feature-note">Priority and reminders will be available after this information is analyzed in a future update.</p>
-      <div className="panel-footer">
-        <Button disabled={saving}>{saving && <span className="button-spinner" />} {saving ? 'Saving information' : 'Save information'}</Button>
-      </div>
-    </form>
-  );
+  const [error, setError] = useState(''), [saving, setSaving] = useState(false);
+  const submit = (event) => { event.preventDefault(); if (saving) return; const data = Object.fromEntries(new FormData(event.currentTarget)); const details = [data.date && `Date: ${data.date}`, data.time && `Time: ${data.time}`, data.notes?.trim() && `Notes: ${data.notes.trim()}`].filter(Boolean).join('\n'); if (!data.title?.trim()) return setError('Please enter a title.'); if (!details) return setError('Please enter a date, time, or notes to save.'); setSaving(true); setError(''); onSave({ title: data.title.trim(), sourceType: 'manual', category: data.category, extractedText: details }).catch((requestError) => { setError(getErrorMessage(requestError, 'Unable to save information. Please try again.')); setSaving(false); }); };
+  return <form className="modal-form wide" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid"><Field label="Title"><input name="title" required placeholder="Dentist Appointment" /></Field><Field label="Category"><select name="category" defaultValue="appointment">{documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field><Field label="Date"><input name="date" type="date" /></Field><Field label="Time"><input name="time" type="time" /></Field></div><Field label="Notes"><textarea name="notes" placeholder="Add any useful context" /></Field><p className="muted feature-note">Priority and reminders are not connected yet.</p><div className="panel-footer"><Button disabled={saving}>{saving && <span className="button-spinner" />}{saving ? 'Saving information' : 'Save information'}</Button></div></form>;
 }
-function Processing({ progress }) {
-  const steps = [
-    'Uploading',
-    'Extracting text',
-    'Identifying important information',
-    'Preparing review',
-    'Complete',
-  ];
-  return (
-    <div className="processing">
-      <div className="processing-mark">
-        <FileText />
-      </div>
-      <h2>Organizing your information</h2>
-      <p>Keep this window open for a moment.</p>
-      <div className="process-bar">
-        <i style={{ width: `${progress}%` }} />
-      </div>
-      <div className="process-steps">
-        {steps.map((s, i) => (
-          <div className={progress >= i * 25 ? 'active' : ''} key={s}>
-            <span>{progress > i * 25 ? <Check size={13} /> : i + 1}</span>
-            <p>{s}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-function Review({ onCancel, onSave }) {
-  const [data, setData] = useState({ type: 'University Notice', priority: 'HIGH', title: 'Fall Semester Registration', deadline: '2026-09-05', amount: 'PKR 5,000', actionRequired: true, summary: 'Students must complete registration before September 5.', consequence: 'Registration may be blocked', actions: ['Pay registration fee','Complete registration form','Prepare CNIC copy','Submit documents'] });
-  const change = (key, value) => setData(v => ({ ...v, [key]: value }));
-  return (
-    <>
-      <PageHeader
-        title="Review AI Analysis"
-        description="LifeAdmin extracted the following information. Review it before saving."
-      />
-      <div className="review-layout">
-        <section className="panel review-form">
-          <div className="review-notice">
-            AI-generated information should be reviewed before confirmation.
-          </div>
-          <div className="form-grid">
-            <Field label="Document type">
-              <select value={data.type} onChange={e => change('type', e.target.value)}>
-                <option>University Notice</option>
-                <option>Bill</option>
-                <option>Contract</option>
-              </select>
-            </Field>
-            <Field label="Suggested priority">
-              <select value={data.priority} onChange={e => change('priority', e.target.value)}>
-                <option>URGENT</option>
-                <option>HIGH</option>
-                <option>MEDIUM</option>
-              </select>
-            </Field>
-            <Field label="Title">
-              <input value={data.title} onChange={e => change('title', e.target.value)} />
-            </Field>
-            <Field label="Deadline">
-              <input type="date" value={data.deadline} onChange={e => change('deadline', e.target.value)} />
-            </Field>
-            <Field label="Amount">
-              <input value={data.amount} onChange={e => change('amount', e.target.value)} />
-            </Field>
-            <Field label="Action required">
-              <select value={data.actionRequired ? 'Yes' : 'No'} onChange={e => change('actionRequired', e.target.value === 'Yes')}>
-                <option>Yes</option><option>No</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Summary">
-            <textarea value={data.summary} onChange={e => change('summary', e.target.value)} />
-          </Field>
-          <Field label="Consequence">
-            <input value={data.consequence} onChange={e => change('consequence', e.target.value)} />
-          </Field>
-          <Field label="Required actions">
-            <textarea value={data.actions.join('\n')} onChange={e => change('actions', e.target.value.split('\n').filter(Boolean))} />
-          </Field>
-          <div className="panel-footer">
-            <Button variant="ghost" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button variant="secondary" onClick={() => onSave({ ...data, actionRequired: false })}>Save Draft</Button>
-            <Button onClick={() => onSave(data)}>Confirm & Save</Button>
-          </div>
-        </section>
-        <aside className="panel review-summary">
-          <span>ANALYSIS SUMMARY</span>
-          <h3>4 actions identified</h3>
-          <p>A deadline, fee, consequence and four required actions will be added to LifeAdmin.</p>
-          <dl>
-            <dt>Confidence</dt>
-            <dd>High</dd>
-            <dt>Source quality</dt>
-            <dd>Clear</dd>
-            <dt>Suggested priority</dt>
-            <dd>
-              <PriorityBadge priority="HIGH" />
-            </dd>
-          </dl>
-        </aside>
-      </div>
-    </>
-  );
-}
+
+function formatFileSize(bytes) { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`; }

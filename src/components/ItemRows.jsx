@@ -1,4 +1,4 @@
-import { Calendar, Check, Clock3, ExternalLink, FileText, MoreHorizontal } from 'lucide-react';
+import { Calendar, Check, Clock3, ExternalLink, FileImage, FileText, Keyboard, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Badge, CheckCircle, IconButton, PriorityBadge } from './UI';
@@ -46,27 +46,29 @@ export function TaskRow({ task, onEdit }) {
   );
 }
 
-export function DocumentCard({ doc, view = 'grid' }) {
+export function DocumentCard({ doc, view = 'grid', onDelete }) {
   const nav = useNavigate();
+  const SourceIcon = doc.sourceType === 'image' ? FileImage : doc.sourceType === 'manual' || doc.sourceType === 'text' ? Keyboard : FileText;
+  const preview = doc.extractedText?.replace(/\[\[PAGE:\d+\]\]|[#*|]/g, ' ').replace(/\s+/g, ' ').trim();
   return (
-    <article className={`document-card ${view}`} onClick={() => nav(`/app/documents/${doc.id}`)}>
+    <article className={`document-card ${view}`}>
       <div className="doc-icon">
-        <FileText />
+        <SourceIcon />
         <span>{doc.type || 'Record'}</span>
       </div>
       <div className="doc-body">
         <div className="doc-top">
           <Badge tone="neutral">{doc.category}</Badge>
-          {doc.priority && <PriorityBadge priority={doc.priority} />}
+          {onDelete && <button className="document-delete-action" aria-label={`Delete ${doc.title}`} onClick={() => onDelete(doc)}><Trash2 /></button>}
         </div>
-        <h3>{doc.title}</h3>
-        {view === 'grid' && <p>{doc.isReal ? 'Saved information' : doc.summary}</p>}
+        <button className="document-open-action" onClick={() => nav(`/app/documents/${doc.id}`)}><h3>{doc.title}</h3></button>
+        {view === 'grid' && <p>{preview || (doc.sourceType === 'image' ? 'No readable text detected in this image.' : 'No extracted text available.')}</p>}
         <div className="meta">
           <span>
             <Calendar size={13} />
-            {doc.deadline || (doc.date ? `Created ${doc.date}` : 'Saved')}
+            {doc.date ? `Created ${doc.date}` : 'Saved'}
           </span>
-          <span>{doc.status || 'Saved'}</span>
+          <span title={doc.originalFilename || ''}>{doc.originalFilename || doc.type}</span>
         </div>
       </div>
     </article>
@@ -81,14 +83,12 @@ export function ReminderRow({ reminder, onSnooze, onDismiss }) {
       </div>
       <div className="row-main">
         <strong>{reminder.title}</strong>
-        <div className="meta">
-          <span>{reminder.detail}</span>
-          <span>{reminder.when}</span>
-        </div>
+        <span className="reminder-detail">{reminder.detail}</span>
+        <div className="reminder-datetime"><strong>{reminder.displayDate?.date || reminder.when}</strong>{reminder.displayDate?.time && <><i aria-hidden="true" /><strong>{reminder.displayDate.time}</strong></>}</div>
       </div>
       <div className="inline-actions">
-        <button onClick={onSnooze}>Snooze</button>
-        <button onClick={onDismiss}>Dismiss</button>
+        <button className="snooze" onClick={onSnooze}>Snooze</button>
+        <button className="dismiss" onClick={onDismiss}>Dismiss</button>
       </div>
     </div>
   );

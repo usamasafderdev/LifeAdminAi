@@ -208,7 +208,7 @@ export default function Dashboard() {
           </button>
         </div>
         <div className="recent-table">
-          {documents.slice(0, 5).map((d) => (
+          {[...documents].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5).map((d) => (
             <button key={d.id} onClick={() => nav(`/app/documents/${d.id}`)}>
               <span className="mini-file">
                 <FileText size={16} />
@@ -219,11 +219,12 @@ export default function Dashboard() {
                   {d.category} · Added {d.date}
                 </small>
               </span>
-              <span>{d.deadline || 'No deadline'}</span>
-              <PriorityBadge priority={d.priority} />
+              <span>{d.type}</span>
+              <span>{d.originalFilename || 'Saved information'}</span>
               <ArrowRight size={15} />
             </button>
           ))}
+          {!documents.length && <div className="recent-documents-empty"><FileText /><div><strong>No documents yet</strong><small>Add your first piece of information to see it here.</small></div><button onClick={() => nav('/app/add')}>Add Information</button></div>}
         </div>
       </section>
     </>

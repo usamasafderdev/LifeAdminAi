@@ -115,6 +115,8 @@ export function ConfirmDialog({
   onConfirm,
   title = 'Are you sure?',
   text = 'This action cannot be undone.',
+  confirmLabel = 'Confirm',
+  busy = false,
 }) {
   return (
     <Modal open={open} onClose={onClose} title={title}>
@@ -124,17 +126,17 @@ export function ConfirmDialog({
         </div>
         <p>{text}</p>
         <div className="modal-actions">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
           <Button
             variant="danger"
-            onClick={() => {
-              onConfirm();
-              onClose();
+            disabled={busy}
+            onClick={async () => {
+              try { await onConfirm(); onClose(); } catch { /* Keep the dialog open so its caller can show the failure. */ }
             }}
           >
-            Confirm
+            {busy ? 'Deleting…' : confirmLabel}
           </Button>
         </div>
       </div>

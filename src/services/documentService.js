@@ -12,8 +12,8 @@ export const documentCategories = [
   ['other', 'Other'],
 ];
 
-const categoryLabels = Object.fromEntries(documentCategories);
-const sourceLabels = { text: 'Text', manual: 'Manual Entry', pdf: 'PDF', image: 'Image' };
+export const categoryLabels = Object.fromEntries(documentCategories);
+export const sourceLabels = { text: 'Text', manual: 'Manual Entry', pdf: 'PDF', image: 'Image' };
 
 export function mapDocument(document) {
   const text = document.extractedText?.trim() || '';
@@ -35,6 +35,13 @@ export const documentService = {
     const { data } = await api.post('/documents', payload);
     return mapDocument(data.document);
   },
+  async uploadDocument(formData) {
+    const { data } = await api.post('/documents/upload', formData, { timeout: 120000 });
+    return { document: mapDocument(data.document), message: data.message };
+  },
+  async uploadPdf(formData) {
+    return this.uploadDocument(formData);
+  },
   async getAll() {
     const { data } = await api.get('/documents');
     return data.documents.map(mapDocument);
@@ -42,6 +49,10 @@ export const documentService = {
   async get(id) {
     const { data } = await api.get(`/documents/${id}`);
     return mapDocument(data.document);
+  },
+  async getFile(id) {
+    const { data } = await api.get(`/documents/${id}/file`, { responseType: 'blob', timeout: 30000 });
+    return URL.createObjectURL(data);
   },
   async update(id, payload) {
     const { data } = await api.patch(`/documents/${id}`, payload);
