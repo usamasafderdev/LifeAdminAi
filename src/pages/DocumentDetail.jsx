@@ -234,6 +234,23 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
   const [savingReal, setSavingReal] = useState(false);
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [mutationError, setMutationError] = useState('');
+  const [analysis, setAnalysis] = useState(document.aiAnalysis);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
+  useEffect(() => { setAnalysis(document.aiAnalysis); }, [document.aiAnalysis]);
+  const runAnalysis = async () => {
+    if (analyzing || !document.extractedText?.trim()) return;
+    setAnalyzing(true);
+    setAnalysisError('');
+    try {
+      const result = await documentService.analyze(document.id, { regenerate: analysis?.status === 'completed' });
+      setAnalysis(result);
+    } catch (error) {
+      setAnalysisError(getErrorMessage(error, 'Document analysis could not be completed.'));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
   useEffect(() => {
     if (!hasUploadedSource) return undefined;
     let active = true;
@@ -249,7 +266,7 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
       <header className="saved-document-header">
         <div className="saved-document-icon"><FileText /></div>
         <div className="saved-document-heading"><h1>{document.title}</h1><p>{document.category} · {document.type} · Saved {new Date(document.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</p></div>
-        <div className="saved-document-actions"><span className="verified-state"><CheckCircle2 />{document.sourceType === 'image' ? document.extractedText ? 'OCR complete' : 'No readable text detected' : document.sourceType === 'pdf' && document.extractedText ? 'Text extracted' : 'Saved'}</span><Button variant="secondary" onClick={() => { setMutationError(''); setEditingReal(true); }}><Edit3 size={14} />Edit</Button><Button variant="secondary" onClick={() => { setMutationError(''); setDeletingReal(true); }}><Trash2 size={14} />Delete</Button></div>
+        <div className="saved-document-actions"><span className="verified-state"><CheckCircle2 />{document.sourceType === 'image' ? document.extractedText ? 'OCR complete' : 'No readable text detected' : document.sourceType === 'pdf' && document.extractedText ? 'Text extracted' : 'Saved'}</span><Button disabled={analyzing || !document.extractedText?.trim()} onClick={runAnalysis}><Bot size={14} />{analyzing ? 'Analyzing...' : analysis?.status === 'completed' ? 'Analyze again' : 'Analyze with AI'}</Button><Button variant="secondary" onClick={() => { setMutationError(''); setEditingReal(true); }}><Edit3 size={14} />Edit</Button><Button variant="secondary" onClick={() => { setMutationError(''); setDeletingReal(true); }}><Trash2 size={14} />Delete</Button></div>
       </header>
       <div className="saved-document-layout">
         <div className="saved-document-main">
@@ -257,10 +274,10 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
             <div className="section-head enhanced"><div><span className="section-icon"><FileText /></span><div><h2>{hasUploadedSource ? 'Document preview' : 'Saved information'}</h2><p>{hasUploadedSource ? `View the original ${document.sourceType === 'image' ? 'image' : 'design'} or switch to accessible extracted text` : 'Original content from this record'}</p></div></div>{hasUploadedSource ? <div className="pdf-view-switch" role="tablist"><button className={view === 'original' ? 'active' : ''} onClick={() => setView('original')}>Original view</button><button className={view === 'text' ? 'active' : ''} onClick={() => setView('text')}>Readable text</button></div> : <span className="content-count">{document.extractedText?.length || 0} characters</span>}</div>
             {hasUploadedSource && view === 'original' ? <div className={document.sourceType === 'image' ? 'image-original-view' : 'pdf-original-view'}>{fileUrl ? document.sourceType === 'image' ? <img src={fileUrl} alt={`Original upload: ${document.title}`} /> : <iframe src={`${fileUrl}#toolbar=1&navpanes=0&view=FitH`} title={`Original PDF: ${document.title}`} /> : <div className="pdf-preview-state">{fileError || `Loading the original ${document.sourceType}…`}</div>}</div> : <div className={`document-text ${!document.extractedText ? 'no-text' : ''}`}>{hasUploadedSource && document.extractedText ? <StructuredPdfText text={document.extractedText} /> : document.extractedText || (document.sourceType === 'pdf' ? 'No selectable text was found in this PDF. It may contain scanned pages.' : document.sourceType === 'image' ? 'No readable text was detected in this image.' : 'No additional information was provided.')}</div>}
           </section>
-          <section className="analysis-empty">
-            <span className="section-icon soft"><Layers3 /></span>
-            <div><h2>Analysis not available yet</h2><p>This record has been saved, but no deadlines, priorities or actions have been identified.</p></div>
-          </section>
+          {analysis?.status === 'completed' ? <AiAnalysisResults analysis={analysis} /> : <section className={`analysis-empty ${analysisError ? 'analysis-failed' : ''}`}>
+            <span className="section-icon soft"><Bot /></span>
+            <div><h2>{analyzing ? 'Analyzing your document' : analysisError ? 'Analysis could not be completed' : 'AI analysis not started'}</h2><p>{analyzing ? 'LifeAdmin is identifying important dates, information, actions, and risks.' : analysisError || 'Analyze this document to identify useful information and suggested actions.'}</p>{analysisError && <Button variant="secondary" disabled={analyzing} onClick={runAnalysis}>Retry analysis</Button>}</div>
+          </section>}
           <section className="empty-work-card">
             <div><span className="section-icon soft"><CheckCircle2 /></span><div><h2>Generated tasks</h2><p>No tasks have been generated from this information yet.</p></div></div>
           </section>
@@ -290,6 +307,53 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
       <ConfirmDialog open={deletingReal} onClose={() => { if (!deletingBusy) { setDeletingReal(false); setMutationError(''); } }} onConfirm={async () => { setDeletingBusy(true); setMutationError(''); try { await onDelete(); } catch (error) { setMutationError(getErrorMessage(error, 'Unable to delete document.')); throw error; } finally { setDeletingBusy(false); } }} title="Delete document?" text={mutationError || `This permanently removes “${document.title}”${hasUploadedSource ? ' and its original uploaded file' : ''}.`} confirmLabel="Delete" busy={deletingBusy} />
     </div>
   );
+}
+
+function AiAnalysisResults({ analysis }) {
+  const dates = analysis.importantDates || [];
+  const actions = analysis.extractedActions || [];
+  const information = analysis.keyInformation || [];
+  const risks = analysis.risksOrConsequences || [];
+  return (
+    <section className="ai-analysis-results">
+      <article className="ai-analysis-hero">
+        <div className="ai-hero-glow" />
+        <header>
+          <span className="ai-hero-icon"><Bot /></span>
+          <div><span>LifeAdmin Intelligence</span><h2>Document analysis</h2></div>
+          <span className="ai-ready"><i />AI complete</span>
+        </header>
+        <p>{analysis.summary || 'No summary was identified.'}</p>
+        <footer>
+          {analysis.category && <span className="ai-category"><Layers3 />{analysis.category.replaceAll('_', ' ')}</span>}
+          <div className="ai-analysis-stats"><span><strong>{dates.length}</strong> dates</span><span><strong>{actions.length}</strong> actions</span><span><strong>{risks.length}</strong> risks</span></div>
+        </footer>
+      </article>
+
+      <div className="ai-insight-grid">
+        <InsightCard icon={<CalendarDays />} eyebrow="Timeline" title="Important dates" count={dates.length} className="dates">
+          {dates.length ? <ol className="ai-date-list">{dates.map((item, index) => <li key={index}><span className="ai-date-marker" /><div><time>{item.date || 'Date not specified'}</time><p>{item.description}</p></div></li>)}</ol> : <InsightEmpty text="No important dates identified" />}
+        </InsightCard>
+        <InsightCard icon={<CheckCircle2 />} eyebrow="Next steps" title="Suggested actions" count={actions.length} className="actions">
+          {actions.length ? <div className="ai-action-list">{actions.map((item, index) => <article key={index}><span>{index + 1}</span><div><strong>{item.title}</strong><p>{item.description || 'No additional details.'}</p></div>{item.priority && <em className={`ai-priority priority-${item.priority.toLowerCase()}`}>{item.priority}</em>}</article>)}</div> : <InsightEmpty text="No actions are required right now" />}
+        </InsightCard>
+        <InsightCard icon={<FileText />} eyebrow="Extracted details" title="Key information" count={information.length} className="information wide">
+          {information.length ? <div className="ai-information-grid">{information.map((item, index) => <div key={index}><span>{String(index + 1).padStart(2, '0')}</span><p>{item}</p></div>)}</div> : <InsightEmpty text="No key information identified" />}
+        </InsightCard>
+        <InsightCard icon={<ShieldCheck />} eyebrow="Attention" title="Risks & consequences" count={risks.length} className="risks wide">
+          {risks.length ? <ul className="ai-risk-list">{risks.map((item, index) => <li key={index}><span>!</span><p>{item}</p></li>)}</ul> : <div className="ai-all-clear"><CheckCircle2 /><div><strong>No risks identified</strong><p>The document does not state any clear risks or consequences.</p></div></div>}
+        </InsightCard>
+      </div>
+    </section>
+  );
+}
+
+function InsightCard({ icon, eyebrow, title, count, className, children }) {
+  return <section className={`ai-insight-card ${className}`}><header><span className="ai-card-icon">{icon}</span><div><small>{eyebrow}</small><h3>{title}</h3></div><b>{count}</b></header><div className="ai-card-body">{children}</div></section>;
+}
+
+function InsightEmpty({ text }) {
+  return <div className="ai-insight-empty"><span><CheckCircle2 /></span><p>{text}</p></div>;
 }
 
 function StructuredPdfText({ text }) {

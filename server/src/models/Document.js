@@ -13,6 +13,43 @@ export const DOCUMENT_CATEGORIES = [
   'other',
 ];
 
+const importantDateSchema = new mongoose.Schema(
+  {
+    date: { type: String, default: '', maxlength: 100 },
+    description: { type: String, default: '', maxlength: 500 },
+  },
+  { _id: false },
+);
+
+const extractedActionSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, maxlength: 300 },
+    description: { type: String, default: '', maxlength: 1000 },
+    priority: { type: String, default: '', maxlength: 50 },
+  },
+  { _id: false },
+);
+
+const aiAnalysisSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ['not_started', 'processing', 'completed', 'failed'],
+      default: 'not_started',
+    },
+    summary: { type: String, default: '', maxlength: 5000 },
+    category: { type: String, default: '', maxlength: 200 },
+    importantDates: { type: [importantDateSchema], default: [] },
+    extractedActions: { type: [extractedActionSchema], default: [] },
+    keyInformation: { type: [String], default: [] },
+    risksOrConsequences: { type: [String], default: [] },
+    model: { type: String, default: '', maxlength: 200 },
+    analyzedAt: { type: Date, default: null },
+    errorMessage: { type: String, default: '', maxlength: 500 },
+  },
+  { _id: false },
+);
+
 const documentSchema = new mongoose.Schema(
   {
     userId: {
@@ -44,6 +81,10 @@ const documentSchema = new mongoose.Schema(
       type: String,
       default: '',
       maxlength: [200000, 'Extracted text cannot exceed 200000 characters'],
+    },
+    aiAnalysis: {
+      type: aiAnalysisSchema,
+      default: undefined,
     },
   },
   { timestamps: true },

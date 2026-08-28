@@ -62,4 +62,8 @@ export const documentService = {
     const { data } = await api.delete(`/documents/${id}`);
     return data;
   },
+  async analyze(id, { regenerate = false } = {}) {
+    const { data } = await api.post(`/documents/${id}/analyze`, { regenerate }, { timeout: 45000 });
+    return data.analysis;
+  },
 };

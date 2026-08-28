@@ -7,6 +7,7 @@ import {
   listDocuments,
   updateDocument,
   uploadDocument,
+  analyzeDocument,
 } from '../controllers/documentController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { uploadErrorHandler, uploadSingleFile } from '../config/upload.js';
@@ -17,6 +18,7 @@ router.use(protect);
 router.post('/upload', uploadSingleFile, uploadErrorHandler, uploadDocument);
 router.route('/').post(createDocument).get(listDocuments);
 router.get('/:id/file', getDocumentFile);
+router.post('/:id/analyze', analyzeDocument);
 router.route('/:id').get(getDocument).patch(updateDocument).delete(deleteDocument);
 
 export default router;

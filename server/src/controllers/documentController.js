@@ -4,12 +4,15 @@ import { storedFilePath } from '../config/upload.js';
 import { deleteFileIfExists, resolveStoredFile } from '../utils/fileUtils.js';
 import { extractPdfText } from '../services/pdfExtractionService.js';
 import { extractTextFromImage } from '../services/ocrService.js';
+import { analyzeDocumentText } from '../services/documentAiService.js';
+import { AiError } from '../services/ai/aiService.js';
 
 const JSON_SOURCE_TYPES = ['text', 'manual'];
 const MAX_TITLE_LENGTH = 200;
 const MAX_TEXT_LENGTH = 200000;
 const EDITABLE_FIELDS = ['title', 'sourceType', 'category', 'extractedText'];
 const FORBIDDEN_UPDATE_FIELDS = ['userId', '_id', 'createdAt', 'originalFilename', 'mimeType', 'filePath'];
+let documentAnalyzer = analyzeDocumentText;
 
 function invalid(message) {
   return { success: false, message };
@@ -217,4 +220,70 @@ export async function deleteDocument(req, res, next) {
   } catch (error) {
     return next(error);
   }
+}
+
+export async function analyzeDocument(req, res, next) {
+  try {
+    if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
+
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!document) return res.status(404).json(invalid('Document not found'));
+    if (!document.extractedText?.trim()) {
+      return res.status(400).json(invalid('This document has no text available for analysis'));
+    }
+
+    const regenerate = req.body?.regenerate === true;
+    if (document.aiAnalysis?.status === 'completed' && !regenerate) {
+      return res.status(200).json({
+        success: true,
+        message: 'Existing document analysis returned',
+        analysis: document.aiAnalysis,
+        cached: true,
+      });
+    }
+    if (document.aiAnalysis?.status === 'processing') {
+      return res.status(409).json(invalid('Document analysis is already in progress'));
+    }
+
+    document.aiAnalysis = {
+      ...(document.aiAnalysis?.toObject?.() || document.aiAnalysis || {}),
+      status: 'processing',
+      errorMessage: '',
+    };
+    await document.save();
+
+    try {
+      const result = await documentAnalyzer({
+        title: document.title,
+        category: document.category,
+        extractedText: document.extractedText,
+      });
+      document.aiAnalysis = {
+        status: 'completed',
+        ...result,
+        analyzedAt: new Date(),
+        errorMessage: '',
+      };
+      await document.save();
+      return res.status(200).json({
+        success: true,
+        message: 'Document analyzed successfully',
+        analysis: document.aiAnalysis,
+        cached: false,
+      });
+    } catch (error) {
+      document.aiAnalysis.status = 'failed';
+      document.aiAnalysis.errorMessage = error instanceof AiError && error.code === 'AI_NOT_CONFIGURED'
+        ? 'AI analysis is not configured.'
+        : 'Document analysis could not be completed.';
+      await document.save();
+      throw error;
+    }
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export function setDocumentAnalyzerForTests(analyzer) {
+  documentAnalyzer = analyzer || analyzeDocumentText;
 }
