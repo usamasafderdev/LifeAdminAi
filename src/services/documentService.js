@@ -66,4 +66,16 @@ export const documentService = {
     const { data } = await api.post(`/documents/${id}/analyze`, { regenerate }, { timeout: 45000 });
     return data.analysis;
   },
+  async getAnalysis(id) {
+    const { data } = await api.get(`/documents/${id}/analysis`);
+    return data;
+  },
+  async confirmAnalysis(id, analysis) {
+    const { data } = await api.post(`/documents/${id}/analysis/confirm`, { analysis });
+    return data;
+  },
+  async rejectAnalysis(id) {
+    const { data } = await api.post(`/documents/${id}/analysis/reject`);
+    return data;
+  },
 };

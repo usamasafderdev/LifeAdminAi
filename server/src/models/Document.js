@@ -25,7 +25,20 @@ const extractedActionSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, maxlength: 300 },
     description: { type: String, default: '', maxlength: 1000 },
-    priority: { type: String, default: '', maxlength: 50 },
+    priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+    dueDate: { type: String, default: '', maxlength: 100 },
+  },
+  { _id: false },
+);
+
+const confirmedAnalysisSchema = new mongoose.Schema(
+  {
+    summary: { type: String, default: '', maxlength: 5000 },
+    category: { type: String, enum: ['', ...DOCUMENT_CATEGORIES], default: '' },
+    importantDates: { type: [importantDateSchema], default: [] },
+    extractedActions: { type: [extractedActionSchema], default: [] },
+    keyInformation: { type: [String], default: [] },
+    risksOrConsequences: { type: [String], default: [] },
   },
   { _id: false },
 );
@@ -46,6 +59,14 @@ const aiAnalysisSchema = new mongoose.Schema(
     model: { type: String, default: '', maxlength: 200 },
     analyzedAt: { type: Date, default: null },
     errorMessage: { type: String, default: '', maxlength: 500 },
+    reviewStatus: {
+      type: String,
+      enum: ['pending_review', 'confirmed', 'rejected'],
+      default: 'pending_review',
+    },
+    reviewedAt: { type: Date, default: null },
+    confirmedAnalysis: { type: confirmedAnalysisSchema, default: undefined },
+    confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { _id: false },
 );

@@ -6,6 +6,9 @@ import { extractPdfText } from '../services/pdfExtractionService.js';
 import { extractTextFromImage } from '../services/ocrService.js';
 import { analyzeDocumentText } from '../services/documentAiService.js';
 import { AiError } from '../services/ai/aiService.js';
+import { validateConfirmedAnalysis } from '../services/aiAnalysisValidator.js';
+import Task from '../models/Task.js';
+import { generateTasksFromAnalysis } from '../services/taskGenerationService.js';
 
 const JSON_SOURCE_TYPES = ['text', 'manual'];
 const MAX_TITLE_LENGTH = 200;
@@ -263,6 +266,10 @@ export async function analyzeDocument(req, res, next) {
         ...result,
         analyzedAt: new Date(),
         errorMessage: '',
+        reviewStatus: 'pending_review',
+        reviewedAt: null,
+        confirmedAnalysis: undefined,
+        confirmedBy: null,
       };
       await document.save();
       return res.status(200).json({
@@ -273,9 +280,11 @@ export async function analyzeDocument(req, res, next) {
       });
     } catch (error) {
       document.aiAnalysis.status = 'failed';
-      document.aiAnalysis.errorMessage = error instanceof AiError && error.code === 'AI_NOT_CONFIGURED'
-        ? 'AI analysis is not configured.'
-        : 'Document analysis could not be completed.';
+      document.aiAnalysis.errorMessage = error.code === 'AI_RESPONSE_VALIDATION_FAILED'
+        ? 'AI response validation failed.'
+        : error instanceof AiError && error.code === 'AI_NOT_CONFIGURED'
+          ? 'AI analysis is not configured.'
+          : 'Document analysis could not be completed.';
       await document.save();
       throw error;
     }
@@ -286,4 +295,99 @@ export async function analyzeDocument(req, res, next) {
 
 export function setDocumentAnalyzerForTests(analyzer) {
   documentAnalyzer = analyzer || analyzeDocumentText;
+}
+
+export async function getDocumentAnalysis(req, res, next) {
+  try {
+    if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id }).select('aiAnalysis');
+    if (!document) return res.status(404).json(invalid('Document not found'));
+    const analysis = document.aiAnalysis || null;
+    return res.status(200).json({
+      success: true,
+      aiAnalysis: analysis,
+      reviewStatus: analysis?.reviewStatus || null,
+      confirmedAnalysis: analysis?.confirmedAnalysis || null,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function confirmDocumentAnalysis(req, res, next) {
+  try {
+    if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!document) return res.status(404).json(invalid('Document not found'));
+    if (document.aiAnalysis?.status !== 'completed') {
+      return res.status(409).json(invalid('No completed AI analysis is available for review'));
+    }
+
+    const confirmedAnalysis = validateConfirmedAnalysis(req.body?.analysis);
+    document.aiAnalysis.confirmedAnalysis = confirmedAnalysis;
+    document.aiAnalysis.reviewStatus = 'confirmed';
+    document.aiAnalysis.reviewedAt = new Date();
+    document.aiAnalysis.confirmedBy = req.user._id;
+    await document.save();
+    return res.status(200).json({
+      success: true,
+      message: 'Analysis confirmed successfully',
+      reviewStatus: document.aiAnalysis.reviewStatus,
+      reviewedAt: document.aiAnalysis.reviewedAt,
+      confirmedAnalysis: document.aiAnalysis.confirmedAnalysis,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function rejectDocumentAnalysis(req, res, next) {
+  try {
+    if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!document) return res.status(404).json(invalid('Document not found'));
+    if (document.aiAnalysis?.status !== 'completed') {
+      return res.status(409).json(invalid('No completed AI analysis is available for review'));
+    }
+
+    document.aiAnalysis.reviewStatus = 'rejected';
+    document.aiAnalysis.reviewedAt = new Date();
+    document.aiAnalysis.confirmedAnalysis = undefined;
+    document.aiAnalysis.confirmedBy = null;
+    await document.save();
+    return res.status(200).json({
+      success: true,
+      message: 'Analysis rejected',
+      reviewStatus: document.aiAnalysis.reviewStatus,
+      reviewedAt: document.aiAnalysis.reviewedAt,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function createTasksFromAnalysis(req, res, next) {
+  try {
+    if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!document) return res.status(404).json(invalid('Document not found'));
+    if (document.aiAnalysis?.reviewStatus !== 'confirmed' || !document.aiAnalysis.confirmedAnalysis) {
+      return res.status(400).json(invalid('Document has no confirmed analysis'));
+    }
+
+    const allowedFields = ['actionIndexes'];
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (Object.keys(body).some((field) => !allowedFields.includes(field))) return res.status(400).json(invalid('Only confirmed task selections are accepted'));
+    const { tasks: candidates, skippedDuplicates } = await generateTasksFromAnalysis(document, req.user._id, { actionIndexes: body.actionIndexes });
+    const tasks = candidates.length ? await Task.insertMany(candidates) : [];
+    return res.status(201).json({
+      success: true,
+      message: tasks.length ? `${tasks.length} task${tasks.length === 1 ? '' : 's'} created` : 'No new tasks to create',
+      tasks,
+      created: tasks.length,
+      skipped: skippedDuplicates,
+      createdCount: tasks.length,
+      skippedCount: skippedDuplicates,
+    });
+  } catch (error) { return next(error); }
 }

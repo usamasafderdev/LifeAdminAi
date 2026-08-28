@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Check, FileText, Inbox, Search, X } from 'lucide-react';
 
 export function Button({ children, variant = 'primary', className = '', ...props }) {
@@ -28,6 +28,12 @@ export function Badge({ children, tone }) {
 export function PriorityBadge({ priority }) {
   if (!priority) return null;
   return <Badge tone={priority}>{priority}</Badge>;
+}
+export function Avatar({ user, size = '' }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const initials = (user?.fullName || 'LifeAdmin User').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  useEffect(() => { setImageFailed(false); }, [user?.avatarUrl]);
+  return <span className={`avatar ${size}`}>{user?.avatarUrl && !imageFailed ? <img src={user.avatarUrl} alt={`${user?.fullName || 'User'} profile`} referrerPolicy="no-referrer" onError={() => setImageFailed(true)} /> : initials}</span>;
 }
 export function PageHeader({ title, description, action }) {
   return (

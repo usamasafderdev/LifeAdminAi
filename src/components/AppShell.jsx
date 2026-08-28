@@ -21,7 +21,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import CommandPalette from './CommandPalette';
-import { Button, IconButton } from './UI';
+import { Avatar, Button, IconButton } from './UI';
 
 const groups = [
   {
@@ -55,7 +55,6 @@ export default function AppShell() {
   );
   const { notifications, setNotifications, toast } = useApp();
   const { user, logout } = useAuth();
-  const initials = (user?.fullName || 'LifeAdmin User').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   const navigate = useNavigate();
   const location = useLocation();
   const unread = notifications.filter((notification) => !notification.read).length;
@@ -129,7 +128,7 @@ export default function AppShell() {
           <span>{collapsed ? 'Expand' : 'Collapse sidebar'}</span>
         </button>
         <div className="sidebar-foot">
-          <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</div>
+          <Avatar user={user} />
           <div>
             <strong>{user?.fullName}</strong>
             <small>{user?.email}</small>
@@ -225,7 +224,7 @@ export default function AppShell() {
                   setNotifs(false);
                 }}
               >
-                <span className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</span>
+                <Avatar user={user} />
                 <ChevronDown size={13} />
               </button>
               <AnimatePresence>

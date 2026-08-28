@@ -17,7 +17,11 @@
     "test:ocr": "node src/scripts/testOcr.js",
     "test:ai": "node src/scripts/testAiService.js",
     "test:ai-provider": "node src/scripts/testAiProvider.js",
-    "test:document-ai": "node src/scripts/testDocumentAi.js"
+    "test:document-ai": "node src/scripts/testDocumentAi.js",
+    "test:ai-validation": "node src/scripts/testAiValidation.js",
+    "test:ai-review": "node src/scripts/testAiReview.js",
+    "test:tasks": "node src/scripts/testTasks.js",
+    "test:task-generation": "node src/scripts/testTaskGeneration.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

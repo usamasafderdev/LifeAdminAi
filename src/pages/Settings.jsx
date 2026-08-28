@@ -2,7 +2,7 @@ import { Bell, Bot, Download, Monitor, Moon, Palette, Shield, Sun, UserRound } f
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Button, Field, PageHeader, Toggle } from '../components/UI';
+import { Avatar, Button, Field, PageHeader, Toggle } from '../components/UI';
 
 const sections = [
   ['Profile', UserRound],
@@ -16,7 +16,6 @@ export default function Settings() {
   const [active, setActive] = useState('Profile');
   const { theme, setTheme, notify } = useApp();
   const { user } = useAuth();
-  const initials = (user?.fullName || 'LifeAdmin User').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   return (
     <>
       <PageHeader title="Settings" description="Manage your account, preferences and data." />
@@ -34,7 +33,7 @@ export default function Settings() {
             <>
               <SettingHead title="Profile" text="Update your personal details and timezone." />
               <div className="profile-edit">
-                <span className="avatar large">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</span>
+                <Avatar user={user} size="large" />
                 <div><strong>{user?.fullName}</strong><small>{user?.email}</small></div>
               </div>
               <div className="form-grid">

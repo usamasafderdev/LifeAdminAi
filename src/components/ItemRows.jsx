@@ -52,6 +52,13 @@ export function DocumentCard({ doc, view = 'grid', onDelete }) {
   const preview = doc.extractedText?.replace(/\[\[PAGE:\d+\]\]|[#*|]/g, ' ').replace(/\s+/g, ' ').trim();
   return (
     <article className={`document-card ${view}`}>
+      <button className={`document-cover cover-${doc.sourceType || 'text'}`} onClick={() => nav(`/app/documents/${doc.id}`)} aria-label={`Open ${doc.title}`}>
+        <span className="cover-type">{doc.type || 'Record'}</span>
+        <span className="cover-fold" />
+        <span className="cover-symbol"><SourceIcon /></span>
+        <span className="cover-lines"><i /><i /><i /><i /></span>
+        <strong>{doc.sourceType === 'image' ? 'Image' : doc.sourceType === 'pdf' ? 'PDF' : doc.sourceType === 'manual' ? 'Note' : 'Information'}</strong>
+      </button>
       <div className="doc-icon">
         <SourceIcon />
         <span>{doc.type || 'Record'}</span>
