@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import app from '../app.js';
 import { connectDB } from '../config/db.js';
 import Document from '../models/Document.js';
+import Task from '../models/Task.js';
 import User from '../models/User.js';
 
 const EMAILS = ['ai-review-a@lifeadmin.local', 'ai-review-b@lifeadmin.local'];
@@ -15,10 +16,15 @@ function check(condition, label) {
 
 const aiSuggestion = {
   status: 'completed',
+  actionRequired: true,
   summary: 'AI original summary',
   category: 'university_notice',
   importantDates: [{ date: '2026-09-10', description: 'Original deadline' }],
-  extractedActions: [{ title: 'Submit report', description: 'Original action', priority: 'high' }],
+  extractedActions: [
+    { title: 'Complete theory questions', description: 'Answer the required questions.', priority: 'medium' },
+    { title: 'Complete practical work', description: 'Create the required deliverables.', priority: 'medium' },
+    { title: 'Submit report', description: 'Original submission action', priority: 'high' },
+  ],
   keyInformation: ['Original information'],
   risksOrConsequences: ['Original risk'],
   model: 'test-model',
@@ -27,10 +33,15 @@ const aiSuggestion = {
 };
 
 const confirmedEdit = {
+  actionRequired: false,
   summary: 'User corrected summary',
   category: 'information',
   importantDates: [{ date: '2026-09-11', description: 'User-confirmed deadline' }],
-  extractedActions: [{ title: 'Submit corrected report', description: 'User-confirmed action', priority: 'medium' }],
+  extractedActions: [
+    { title: 'Complete corrected theory questions', description: 'User-confirmed theory action', priority: 'medium' },
+    { title: 'Complete corrected practical work', description: 'User-confirmed practical action', priority: 'medium' },
+    { title: 'Submit corrected report', description: 'User-confirmed submission action', priority: 'high' },
+  ],
   keyInformation: ['User-confirmed information'],
   risksOrConsequences: ['User-confirmed risk'],
 };
@@ -42,7 +53,7 @@ async function run() {
     await connectDB();
     const oldUsers = await User.find({ email: { $in: EMAILS } }).select('_id');
     const oldIds = oldUsers.map((user) => user._id);
-    if (oldIds.length) await Document.deleteMany({ userId: { $in: oldIds } });
+    if (oldIds.length) await Promise.all([Task.deleteMany({ userId: { $in: oldIds } }), Document.deleteMany({ userId: { $in: oldIds } })]);
     await User.deleteMany({ email: { $in: EMAILS } });
     server = app.listen(0);
     await new Promise((resolve) => server.once('listening', resolve));
@@ -63,9 +74,10 @@ async function run() {
     });
     const [a, b] = await Promise.all([register('AI Review A', EMAILS[0]), register('AI Review B', EMAILS[1])]);
     userIds = [a.body.user._id, b.body.user._id];
-    const [owned, rejected, legacy] = await Promise.all([
+    const [owned, rejected, humanOverride, legacy] = await Promise.all([
       Document.create({ userId: a.body.user._id, title: 'Review document', sourceType: 'text', extractedText: 'Review text', aiAnalysis: aiSuggestion }),
       Document.create({ userId: a.body.user._id, title: 'Reject document', sourceType: 'text', extractedText: 'Reject text', aiAnalysis: aiSuggestion }),
+      Document.create({ userId: a.body.user._id, title: 'Human override document', sourceType: 'text', extractedText: 'Informational text', aiAnalysis: { ...aiSuggestion, actionRequired: false, extractedActions: [] } }),
       Document.create({ userId: a.body.user._id, title: 'Legacy document', sourceType: 'manual', extractedText: 'Legacy text' }),
     ]);
 
@@ -78,7 +90,18 @@ async function run() {
       method: 'POST', token: a.body.token, body: { analysis: confirmedEdit },
     });
     check(confirmed.status === 200 && confirmed.body.reviewStatus === 'confirmed', 'Owner can confirm analysis');
-    check(confirmed.body.confirmedAnalysis.summary === confirmedEdit.summary && confirmed.body.confirmedAnalysis.extractedActions[0].priority === 'medium', 'Confirmation data validated');
+    check(confirmed.body.confirmedAnalysis.summary === confirmedEdit.summary && confirmed.body.confirmedAnalysis.extractedActions.length === 3, 'All AI actions survive confirmation');
+    check(confirmed.body.confirmedAnalysis.actionRequired === true, 'Confirmed actionability follows approved actions');
+
+    const generated = await request(`/api/documents/${owned._id}/create-tasks`, { method: 'POST', token: a.body.token });
+    check(generated.status === 201 && generated.body.created === 3, 'Three confirmed actions create three tasks');
+
+    const humanConfirmed = await request(`/api/documents/${humanOverride._id}/analysis/confirm`, {
+      method: 'POST', token: a.body.token, body: { analysis: { ...confirmedEdit, actionRequired: false, extractedActions: [{ title: 'Contact the issuer', description: 'Action added during human review.', priority: 'medium' }] } },
+    });
+    check(humanConfirmed.status === 200 && humanConfirmed.body.confirmedAnalysis.actionRequired === true && humanConfirmed.body.confirmedAnalysis.extractedActions.length === 1, 'Human-added action overrides raw non-actionable result');
+    const humanGenerated = await request(`/api/documents/${humanOverride._id}/create-tasks`, { method: 'POST', token: a.body.token });
+    check(humanGenerated.body.created === 1, 'Human-added confirmed action creates a task');
 
     const invalid = await request(`/api/documents/${owned._id}/analysis/confirm`, {
       method: 'POST', token: a.body.token, body: { analysis: { ...confirmedEdit, extractedActions: [{ title: 'Unsafe', description: '', priority: 'urgent' }] } },
@@ -89,7 +112,7 @@ async function run() {
     check(rejection.status === 200 && rejection.body.reviewStatus === 'rejected', 'Reject workflow works');
 
     const stored = await Document.findById(owned._id);
-    check(stored.aiAnalysis.summary === aiSuggestion.summary && stored.aiAnalysis.extractedActions[0].description === 'Original action', 'Original AI analysis remains unchanged');
+    check(stored.aiAnalysis.summary === aiSuggestion.summary && stored.aiAnalysis.extractedActions.length === 3, 'Original AI analysis remains unchanged');
     check(stored.aiAnalysis.confirmedAnalysis.summary === confirmedEdit.summary && String(stored.aiAnalysis.confirmedBy) === String(a.body.user._id), 'Confirmed analysis persists');
     const refreshed = await request(`/api/documents/${owned._id}/analysis`, { token: a.body.token });
     check(refreshed.body.reviewStatus === 'confirmed' && refreshed.body.confirmedAnalysis.summary === confirmedEdit.summary, 'Confirmed analysis survives refresh');
@@ -103,7 +126,7 @@ async function run() {
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     if (mongoose.connection.readyState) {
-      if (userIds.length) await Document.deleteMany({ userId: { $in: userIds } });
+      if (userIds.length) await Promise.all([Task.deleteMany({ userId: { $in: userIds } }), Document.deleteMany({ userId: { $in: userIds } })]);
       await User.deleteMany({ email: { $in: EMAILS } });
       await mongoose.connection.close();
     }

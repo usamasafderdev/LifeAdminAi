@@ -17,6 +17,7 @@ function check(condition, label) {
 }
 
 const validAnalysis = {
+  actionRequired: true,
   summary: 'The internship report is due on September 10.',
   category: 'university_notice',
   importantDates: [{ date: 'September 10', description: 'Internship report deadline' }],
@@ -74,6 +75,29 @@ async function run() {
     const empty = await create(userA.body.token, 'Empty document', '');
     const invalid = await create(userA.body.token, 'Invalid AI response');
     const unavailable = await create(userA.body.token, 'Provider failure');
+    const previouslyConfirmed = await Document.create({
+      userId: userA.body.user._id,
+      title: 'Previously confirmed assignment',
+      sourceType: 'text',
+      category: 'university_notice',
+      extractedText: 'Complete and submit the new assignment.',
+      aiAnalysis: {
+        ...validAnalysis,
+        status: 'completed',
+        reviewStatus: 'confirmed',
+        reviewedAt: new Date(),
+        confirmedBy: userA.body.user._id,
+        confirmedAnalysis: {
+          actionRequired: true,
+          summary: 'Old confirmed analysis',
+          category: 'university_notice',
+          importantDates: [],
+          extractedActions: [{ title: 'Old confirmed task', description: 'Old proposal.', priority: 'medium' }],
+          keyInformation: [],
+          risksOrConsequences: [],
+        },
+      },
+    });
 
     check((await request(`/api/documents/${owned.body.document._id}/analyze`, { method: 'POST' })).status === 401, 'Authentication required');
     const analyzed = await request(`/api/documents/${owned.body.document._id}/analyze`, { method: 'POST', token: userA.body.token });
@@ -85,6 +109,12 @@ async function run() {
     check(stored.aiAnalysis.summary === validAnalysis.summary && stored.aiAnalysis.model === 'test-model', 'AI response stored');
     const cached = await request(`/api/documents/${owned.body.document._id}/analyze`, { method: 'POST', token: userA.body.token });
     check(cached.status === 200 && cached.body.cached === true, 'Completed analysis reused');
+
+    const regenerated = await request(`/api/documents/${previouslyConfirmed._id}/analyze`, { method: 'POST', token: userA.body.token, body: { regenerate: true } });
+    check(regenerated.status === 200 && regenerated.body.cached === false && regenerated.body.analysis.reviewStatus === 'pending_review', 'Analyze Again regenerates with current analyzer');
+    check(!regenerated.body.analysis.confirmedAnalysis && !regenerated.body.analysis.confirmedBy, 'Reanalysis invalidates old confirmation');
+    const regeneratedStored = await Document.findById(previouslyConfirmed._id);
+    check(regeneratedStored.aiAnalysis.extractedActions.length === validAnalysis.extractedActions.length && !regeneratedStored.aiAnalysis.confirmedAnalysis, 'New proposal replaces old confirmed state');
 
     const invalidResult = await request(`/api/documents/${invalid.body.document._id}/analyze`, { method: 'POST', token: userA.body.token });
     const invalidStored = await Document.findById(invalid.body.document._id);

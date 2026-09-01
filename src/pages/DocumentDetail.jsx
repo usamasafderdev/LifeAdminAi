@@ -55,7 +55,7 @@ export default function DocumentDetail() {
   if (loading && !doc) return <div className="panel"><Skeleton lines={6} /></div>;
   if (loadError && !doc) return <EmptyState title={loadError === 'not-found' ? 'Document not found' : 'Unable to load this document.'} text={loadError === 'not-found' ? 'It may have been deleted or is not available to your account.' : 'Check your connection or return to Documents.'} action={<Button onClick={() => nav('/app/documents')}>Back to documents</Button>} />;
   if (!doc) return <EmptyState title="Document not found" text="It may have been deleted." action={<Button onClick={() => nav('/app/documents')}>Back to documents</Button>} />;
-  if (doc.isReal) return <SavedDocumentDetail document={doc} onBack={() => nav('/app/documents')} onUpdate={async (values) => { const updated = await updateDocument(doc.id, values); setRemoteDocument(updated); notify('Document updated'); }} onDelete={async () => { await deleteDocument(doc.id); notify('Document deleted'); nav('/app/documents'); }} />;
+  if (doc.isReal) return <SavedDocumentDetail document={doc} onBack={() => nav('/app/documents')} onUpdate={async (values) => { const updated = await updateDocument(doc.id, values); setRemoteDocument(updated); notify('Document updated'); }} onDelete={async () => { const result = await deleteDocument(doc.id); notify(result.deletedTasks ? `Document and ${result.deletedTasks} linked task${result.deletedTasks === 1 ? '' : 's'} deleted` : 'Document deleted'); nav('/app/documents'); }} />;
   const related = tasks.filter((t) => t.source === doc.id);
   return (
     <>
@@ -211,7 +211,8 @@ export default function DocumentDetail() {
           nav('/app/documents');
         }}
         title="Delete document?"
-        text="This will also delete tasks and reminders generated from this document."
+        text={related.length ? `Deleting “${doc.title}” will also permanently delete ${related.length} linked task${related.length === 1 ? '' : 's'}.` : `Delete “${doc.title}” permanently?`}
+        confirmLabel={related.length ? 'Delete document & tasks' : 'Delete document'}
       />
       <Modal open={editing} onClose={() => setEditing(false)} title="Edit document">
         <form className="modal-form" onSubmit={e => { e.preventDefault(); const values = Object.fromEntries(new FormData(e.currentTarget)); updateDocument(doc.id, { ...values, deadline: values.deadlineDate ? formatDate(values.deadlineDate) : doc.deadline }); setEditing(false); notify('Document updated'); }}>
@@ -227,8 +228,8 @@ export default function DocumentDetail() {
 
 function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
   const { tasks, addGeneratedTasks, notify } = useApp();
+  const nav = useNavigate();
   const hasUploadedSource = ['pdf', 'image'].includes(document.sourceType);
-  const [view, setView] = useState(hasUploadedSource ? 'original' : 'text');
   const [fileUrl, setFileUrl] = useState('');
   const [fileError, setFileError] = useState('');
   const [editingReal, setEditingReal] = useState(false);
@@ -239,17 +240,30 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
   const [analysis, setAnalysis] = useState(document.aiAnalysis);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState('');
+  const [analysisRetrySeconds, setAnalysisRetrySeconds] = useState(0);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewError, setReviewError] = useState('');
   const [generatingTasks, setGeneratingTasks] = useState(false);
   const [taskGenerationError, setTaskGenerationError] = useState('');
   const [selectedTaskIndexes, setSelectedTaskIndexes] = useState([]);
   const suggestedTasks = analysis?.confirmedAnalysis?.extractedActions || [];
+  const aiSuggestedTasks = analysis?.extractedActions || [];
   const relatedTasks = tasks.filter((task) => String(task.documentId) === String(document.id));
+  const generatedTitles = new Set(relatedTasks.map((task) => task.title.trim().toLocaleLowerCase()));
+  const remainingSuggestedTasks = suggestedTasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ task }) => !generatedTitles.has(task.title.trim().toLocaleLowerCase()));
+  const remainingTaskIndexes = remainingSuggestedTasks.map(({ index }) => index);
+  const generatedTaskKey = relatedTasks.map((task) => `${task.id}:${task.title}`).join('|');
   useEffect(() => { setAnalysis(document.aiAnalysis); }, [document.aiAnalysis]);
   useEffect(() => {
-    setSelectedTaskIndexes(analysis?.reviewStatus === 'confirmed' ? suggestedTasks.map((_, index) => index) : []);
-  }, [analysis?.reviewStatus, analysis?.reviewedAt]);
+    if (!analysisRetrySeconds) return undefined;
+    const timer = window.setTimeout(() => setAnalysisRetrySeconds((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [analysisRetrySeconds]);
+  useEffect(() => {
+    setSelectedTaskIndexes(analysis?.reviewStatus === 'confirmed' ? remainingTaskIndexes : []);
+  }, [analysis?.reviewStatus, analysis?.reviewedAt, generatedTaskKey]);
   useEffect(() => {
     let active = true;
     documentService.getAnalysis(document.id)
@@ -258,15 +272,18 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
     return () => { active = false; };
   }, [document.id]);
   const runAnalysis = async () => {
-    if (analyzing || !document.extractedText?.trim()) return;
+    if (analyzing || analysisRetrySeconds > 0 || !document.extractedText?.trim()) return;
     setAnalyzing(true);
     setAnalysisError('');
     try {
       const result = await documentService.analyze(document.id, { regenerate: analysis?.status === 'completed' });
       setAnalysis(result);
+      setSelectedTaskIndexes([]);
+      setAnalysisRetrySeconds(0);
       setReviewError('');
     } catch (error) {
       setAnalysisError(getErrorMessage(error, 'Document analysis could not be completed.'));
+      setAnalysisRetrySeconds(error.response?.status === 503 ? 45 : 10);
     } finally {
       setAnalyzing(false);
     }
@@ -305,6 +322,21 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
       setGeneratingTasks(false);
     }
   };
+  const scrollToReview = () => window.document.getElementById('document-ai-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const analysisIsProcessing = analyzing || analysis?.status === 'processing';
+  const reviewStatus = analysis?.reviewStatus;
+  let taskWorkspaceMessage = 'Analyze document to identify actionable tasks.';
+  if (analysisIsProcessing) taskWorkspaceMessage = 'Analyzing document...';
+  else if (analysis?.status === 'completed' && reviewStatus === 'pending_review') {
+    taskWorkspaceMessage = aiSuggestedTasks.length
+      ? `${aiSuggestedTasks.length} suggested action${aiSuggestedTasks.length === 1 ? '' : 's'} found. Review and confirm the AI suggestions before creating tasks.`
+      : 'No actions were suggested. Review the analysis and add any missing action before confirming.';
+  } else if (reviewStatus === 'confirmed' && suggestedTasks.length > 0) {
+    taskWorkspaceMessage = remainingSuggestedTasks.length
+      ? `${suggestedTasks.length} confirmed actionable task${suggestedTasks.length === 1 ? '' : 's'}. ${remainingSuggestedTasks.length} still available to create.`
+      : `${relatedTasks.length} task${relatedTasks.length === 1 ? '' : 's'} created from this document.`;
+  } else if (reviewStatus === 'confirmed') taskWorkspaceMessage = 'No actionable tasks were confirmed.';
+  else if (reviewStatus === 'rejected') taskWorkspaceMessage = 'AI suggestions were rejected.';
   useEffect(() => {
     if (!hasUploadedSource) return undefined;
     let active = true;
@@ -320,24 +352,31 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
       <header className="saved-document-header">
         <div className="saved-document-icon"><FileText /></div>
         <div className="saved-document-heading"><h1>{document.title}</h1><p>{document.category} · {document.type} · Saved {new Date(document.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</p></div>
-        <div className="saved-document-actions"><span className="verified-state"><CheckCircle2 />{document.sourceType === 'image' ? document.extractedText ? 'OCR complete' : 'No readable text detected' : document.sourceType === 'pdf' && document.extractedText ? 'Text extracted' : 'Saved'}</span><Button disabled={analyzing || !document.extractedText?.trim()} onClick={runAnalysis}><Bot size={14} />{analyzing ? 'Analyzing...' : analysis?.status === 'completed' ? 'Analyze again' : 'Analyze with AI'}</Button><Button variant="secondary" onClick={() => { setMutationError(''); setEditingReal(true); }}><Edit3 size={14} />Edit</Button><Button variant="secondary" onClick={() => { setMutationError(''); setDeletingReal(true); }}><Trash2 size={14} />Delete</Button></div>
+        <div className="saved-document-actions"><span className="verified-state"><CheckCircle2 />{document.sourceType === 'image' ? document.extractedText ? 'OCR complete' : 'No readable text detected' : document.sourceType === 'pdf' && document.extractedText ? 'Text extracted' : 'Saved'}</span><Button disabled={analyzing || analysisRetrySeconds > 0 || !document.extractedText?.trim()} onClick={runAnalysis}><Bot size={14} />{analyzing ? 'Analyzing...' : analysisRetrySeconds > 0 ? `Retry in ${analysisRetrySeconds}s` : analysis?.status === 'completed' ? 'Analyze again' : 'Analyze with AI'}</Button><Button variant="secondary" onClick={() => { setMutationError(''); setEditingReal(true); }}><Edit3 size={14} />Edit</Button><Button variant="secondary" onClick={() => { setMutationError(''); setDeletingReal(true); }}><Trash2 size={14} />Delete</Button></div>
       </header>
       <div className="saved-document-layout">
         <div className="saved-document-main">
           <section className="panel information-card">
-            <div className="section-head enhanced"><div><span className="section-icon"><FileText /></span><div><h2>{hasUploadedSource ? 'Document preview' : 'Saved information'}</h2><p>{hasUploadedSource ? `View the original ${document.sourceType === 'image' ? 'image' : 'design'} or switch to accessible extracted text` : 'Original content from this record'}</p></div></div>{hasUploadedSource ? <div className="pdf-view-switch" role="tablist"><button className={view === 'original' ? 'active' : ''} onClick={() => setView('original')}>Original view</button><button className={view === 'text' ? 'active' : ''} onClick={() => setView('text')}>Readable text</button></div> : <span className="content-count">{document.extractedText?.length || 0} characters</span>}</div>
-            {hasUploadedSource && view === 'original' ? <div className={document.sourceType === 'image' ? 'image-original-view' : 'pdf-original-view'}>{fileUrl ? document.sourceType === 'image' ? <img src={fileUrl} alt={`Original upload: ${document.title}`} /> : <iframe src={`${fileUrl}#toolbar=1&navpanes=0&view=FitH`} title={`Original PDF: ${document.title}`} /> : <div className="pdf-preview-state">{fileError || `Loading the original ${document.sourceType}…`}</div>}</div> : <div className={`document-text ${!document.extractedText ? 'no-text' : ''}`}>{hasUploadedSource && document.extractedText ? <StructuredPdfText text={document.extractedText} /> : document.extractedText || (document.sourceType === 'pdf' ? 'No selectable text was found in this PDF. It may contain scanned pages.' : document.sourceType === 'image' ? 'No readable text was detected in this image.' : 'No additional information was provided.')}</div>}
+            <div className="section-head enhanced"><div><span className="section-icon"><FileText /></span><div><h2>{hasUploadedSource ? 'Document preview' : 'Saved information'}</h2><p>{hasUploadedSource ? `View the original uploaded ${document.sourceType === 'image' ? 'image' : 'document'}` : 'Original content from this record'}</p></div></div>{!hasUploadedSource && <span className="content-count">{document.extractedText?.length || 0} characters</span>}</div>
+            {hasUploadedSource ? <div className={document.sourceType === 'image' ? 'image-original-view' : 'pdf-original-view'}>{fileUrl ? document.sourceType === 'image' ? <img src={fileUrl} alt={`Original upload: ${document.title}`} /> : <iframe src={`${fileUrl}#toolbar=1&navpanes=0&view=FitH`} title={`Original PDF: ${document.title}`} /> : <div className="pdf-preview-state">{fileError || `Loading the original ${document.sourceType}…`}</div>}</div> : <div className={`document-text ${!document.extractedText ? 'no-text' : ''}`}>{document.extractedText || 'No additional information was provided.'}</div>}
           </section>
           {analysis?.status === 'completed' ? <AiReviewWorkspace analysis={analysis} busy={reviewBusy} serverError={reviewError} onConfirm={confirmAnalysis} onReject={rejectAnalysis} /> : <section className={`analysis-empty ${analysisError ? 'analysis-failed' : ''}`}>
             <span className="section-icon soft"><Bot /></span>
-            <div><h2>{analyzing ? 'Analyzing your document' : analysisError ? 'Analysis could not be completed' : 'AI analysis not started'}</h2><p>{analyzing ? 'LifeAdmin is identifying important dates, information, actions, and risks.' : analysisError || 'Analyze this document to identify useful information and suggested actions.'}</p>{analysisError && <Button variant="secondary" disabled={analyzing} onClick={runAnalysis}>Retry analysis</Button>}</div>
+            <div><h2>{analyzing ? 'Analyzing your document' : analysisError ? 'Analysis could not be completed' : 'AI analysis not started'}</h2><p>{analyzing ? 'LifeAdmin is identifying important dates, information, actions, and risks.' : analysisError || 'Analyze this document to identify useful information and suggested actions.'}</p>{analysisError && <Button variant="secondary" disabled={analyzing || analysisRetrySeconds > 0} onClick={runAnalysis}>{analysisRetrySeconds > 0 ? `Retry available in ${analysisRetrySeconds}s` : 'Retry analysis'}</Button>}</div>
           </section>}
           <section className="empty-work-card generated-task-workspace">
-            <div><span className="section-icon soft"><CheckCircle2 /></span><div><h2>Generated tasks</h2><p>{relatedTasks.length ? `${relatedTasks.length} task${relatedTasks.length === 1 ? '' : 's'} linked to this document.` : analysis?.reviewStatus === 'confirmed' ? 'Turn the actions you confirmed into trackable tasks.' : 'Confirm the AI analysis before creating tasks.'}</p></div></div>
+            <div><span className="section-icon soft"><CheckCircle2 /></span><div><h2>Generated tasks</h2><p>{taskWorkspaceMessage}</p></div></div>
             {taskGenerationError && <p className="form-error" role="alert">{taskGenerationError}</p>}
-            {analysis?.reviewStatus === 'confirmed' && suggestedTasks.length > 0 && <div className="suggested-task-preview"><div className="suggested-task-title"><div><strong>Suggested tasks</strong><span>Select the important actions you want to create.</span></div><button onClick={() => setSelectedTaskIndexes(selectedTaskIndexes.length === suggestedTasks.length ? [] : suggestedTasks.map((_, index) => index))}>{selectedTaskIndexes.length === suggestedTasks.length ? 'Clear all' : 'Select all'}</button></div>{suggestedTasks.map((task, index) => <label className="suggested-task-option" key={`${task.title}-${index}`}><input type="checkbox" checked={selectedTaskIndexes.includes(index)} onChange={() => setSelectedTaskIndexes((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} /><span><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</span><PriorityBadge priority={task.priority} />{task.dueDate && <time>{task.dueDate}</time>}</label>)}</div>}
+            {reviewStatus === 'confirmed' && remainingSuggestedTasks.length > 0 && <div className="suggested-task-preview"><div className="suggested-task-title"><div><strong>Confirmed tasks ready to create</strong><span>Select the remaining approved actions you want to create.</span></div><button onClick={() => setSelectedTaskIndexes(selectedTaskIndexes.length === remainingSuggestedTasks.length ? [] : remainingTaskIndexes)}>{selectedTaskIndexes.length === remainingSuggestedTasks.length ? 'Clear all' : 'Select all'}</button></div>{remainingSuggestedTasks.map(({ task, index }) => <label className="suggested-task-option" key={`${task.title}-${index}`}><input type="checkbox" checked={selectedTaskIndexes.includes(index)} onChange={() => setSelectedTaskIndexes((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} /><span><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</span><PriorityBadge priority={task.priority} />{task.dueDate && <time>{task.dueDate}</time>}</label>)}</div>}
             {relatedTasks.length > 0 && <div className="document-generated-list">{relatedTasks.map((task) => <div key={task.id}><CheckCircle2 /><span><strong>{task.title}</strong><small>{task.status} · {task.priority} priority</small></span></div>)}</div>}
-            {analysis?.reviewStatus === 'confirmed' && <Button disabled={generatingTasks || !selectedTaskIndexes.length} onClick={createTasksFromAnalysis}><CheckCircle2 size={15} />{generatingTasks ? 'Creating tasks…' : `Create Selected Tasks (${selectedTaskIndexes.length})`}</Button>}
+            <div className="generated-task-actions">
+              {!analysisIsProcessing && analysis?.status !== 'completed' && <Button disabled={analyzing || analysisRetrySeconds > 0 || !document.extractedText?.trim()} onClick={runAnalysis}><Bot size={15} />{analysisRetrySeconds > 0 ? `Retry in ${analysisRetrySeconds}s` : 'Analyze with AI'}</Button>}
+              {analysis?.status === 'completed' && reviewStatus === 'pending_review' && <Button onClick={scrollToReview}><CheckCircle2 size={15} />Review Actions</Button>}
+              {reviewStatus === 'confirmed' && remainingSuggestedTasks.length > 0 && <Button disabled={generatingTasks || !selectedTaskIndexes.length} onClick={createTasksFromAnalysis}><CheckCircle2 size={15} />{generatingTasks ? 'Creating tasks…' : `Create Selected Tasks (${selectedTaskIndexes.length})`}</Button>}
+              {relatedTasks.length > 0 && <Button variant="secondary" onClick={() => nav('/app/tasks')}>View Tasks</Button>}
+              {analysis?.status === 'completed' && ((reviewStatus === 'confirmed' && suggestedTasks.length === 0) || reviewStatus === 'rejected') && <Button variant="secondary" onClick={() => nav('/app/tasks')}>Add Task Manually</Button>}
+              {analysis?.status === 'completed' && reviewStatus !== 'pending_review' && <Button variant="secondary" disabled={analyzing || analysisRetrySeconds > 0} onClick={runAnalysis}><Bot size={15} />{analysisRetrySeconds > 0 ? `Retry in ${analysisRetrySeconds}s` : 'Analyze Again'}</Button>}
+            </div>
           </section>
         </div>
         <aside className="saved-document-aside">
@@ -362,7 +401,7 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
           <div className="modal-actions"><Button type="button" variant="secondary" disabled={savingReal} onClick={() => setEditingReal(false)}>Cancel</Button><Button disabled={savingReal}>{savingReal && <span className="button-spinner" />}{savingReal ? 'Saving…' : 'Save changes'}</Button></div>
         </form>
       </Modal>
-      <ConfirmDialog open={deletingReal} onClose={() => { if (!deletingBusy) { setDeletingReal(false); setMutationError(''); } }} onConfirm={async () => { setDeletingBusy(true); setMutationError(''); try { await onDelete(); } catch (error) { setMutationError(getErrorMessage(error, 'Unable to delete document.')); throw error; } finally { setDeletingBusy(false); } }} title="Delete document?" text={mutationError || `This permanently removes “${document.title}”${hasUploadedSource ? ' and its original uploaded file' : ''}.`} confirmLabel="Delete" busy={deletingBusy} />
+      <ConfirmDialog open={deletingReal} onClose={() => { if (!deletingBusy) { setDeletingReal(false); setMutationError(''); } }} onConfirm={async () => { setDeletingBusy(true); setMutationError(''); try { await onDelete(); } catch (error) { setMutationError(getErrorMessage(error, 'Unable to delete document.')); throw error; } finally { setDeletingBusy(false); } }} title="Delete document?" text={mutationError || (relatedTasks.length ? `Deleting “${document.title}” will also permanently delete ${relatedTasks.length} linked task${relatedTasks.length === 1 ? '' : 's'}${hasUploadedSource ? ' and its uploaded file' : ''}.` : `Delete “${document.title}” permanently${hasUploadedSource ? ' along with its uploaded file' : ''}?`)} confirmLabel={relatedTasks.length ? 'Delete document & tasks' : 'Delete document'} busy={deletingBusy} />
     </div>
   );
 }
@@ -370,6 +409,7 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
 function createReviewDraft(analysis) {
   const source = analysis.reviewStatus === 'confirmed' && analysis.confirmedAnalysis ? analysis.confirmedAnalysis : analysis;
   return {
+    actionRequired: source.actionRequired === true || (source.extractedActions || []).length > 0,
     summary: source.summary || '', category: source.category || '',
     importantDates: (source.importantDates || []).map((item) => ({ ...item })),
     extractedActions: (source.extractedActions || []).map((item) => ({ ...item })),
@@ -393,6 +433,7 @@ function AiReviewWorkspace({ analysis, busy, serverError, onConfirm, onReject })
     if (invalidDate || invalidAction || invalidText) return setLocalError('Complete or remove empty review items before confirming.');
     setLocalError('');
     await onConfirm({
+      actionRequired: draft.extractedActions.length > 0,
       summary: draft.summary.trim(), category: draft.category,
       importantDates: draft.importantDates.map((item) => ({ date: item.date.trim(), description: item.description.trim() })),
       extractedActions: draft.extractedActions.map((item) => ({ title: item.title.trim(), description: item.description.trim(), priority: item.priority, ...(item.dueDate ? { dueDate: item.dueDate.trim() } : {}) })),
@@ -400,14 +441,14 @@ function AiReviewWorkspace({ analysis, busy, serverError, onConfirm, onReject })
     }).catch(() => {});
   };
   const statusLabel = confirmed ? 'Analysis confirmed' : rejected ? 'Analysis rejected' : 'Review AI suggestions';
-  return <section className="ai-review-workspace">
+  return <section className="ai-review-workspace" id="document-ai-review">
     <header className={`ai-review-header status-${analysis.reviewStatus || 'pending_review'}`}><span className="ai-hero-icon"><Bot /></span><div><small>Human review required</small><h2>{statusLabel}</h2><p>{confirmed ? 'These reviewed details are ready for future LifeAdmin features.' : rejected ? 'The AI suggestion was rejected. Analyze again to create a new review.' : 'AI can make mistakes. Check and edit every suggestion before confirming.'}</p></div><span className="review-status-pill"><i />{(analysis.reviewStatus || 'pending_review').replace('_', ' ')}</span></header>
     {(localError || serverError) && <div className="form-error" role="alert">{localError || serverError}</div>}
     <div className="ai-review-form">
       <ReviewSection icon={<Bot />} title="AI generated summary" hint="Edit the summary so it matches the source document."><textarea value={draft.summary} disabled={!editable || busy} maxLength={5000} rows="4" onChange={(event) => setDraft((current) => ({ ...current, summary: event.target.value }))} /></ReviewSection>
       <ReviewSection icon={<Layers3 />} title="Category" hint="Choose the closest document category."><select value={draft.category} disabled={!editable || busy} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))}><option value="">No category</option>{documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></ReviewSection>
       <ReviewSection icon={<CalendarDays />} title="Important dates" hint="Remove dates that are not explicitly supported by the document." action={editable && <button onClick={() => setDraft((current) => ({ ...current, importantDates: [...current.importantDates, { date: '', description: '' }] }))}>+ Add date</button>}><div className="review-edit-list">{draft.importantDates.map((item, index) => <div className="review-edit-row date" key={index}><input aria-label="Date" placeholder="Date" value={item.date} disabled={!editable || busy} onChange={(event) => updateList('importantDates', index, { ...item, date: event.target.value })} /><input aria-label="Date description" placeholder="What happens on this date?" value={item.description} disabled={!editable || busy} onChange={(event) => updateList('importantDates', index, { ...item, description: event.target.value })} />{editable && <button aria-label="Remove date" onClick={() => removeList('importantDates', index)}>×</button>}</div>)}{!draft.importantDates.length && <p className="review-none">No important dates identified.</p>}</div></ReviewSection>
-      <ReviewSection icon={<CheckCircle2 />} title="Suggested actions" hint="Confirm that every action is actually required. Add a due date only when the document states one." action={editable && <button onClick={() => setDraft((current) => ({ ...current, extractedActions: [...current.extractedActions, { title: '', description: '', priority: 'medium', dueDate: '' }] }))}>+ Add action</button>}><div className="review-edit-list">{draft.extractedActions.map((item, index) => <div className="review-action-card" key={index}><div><input aria-label="Action title" placeholder="Action title" value={item.title} disabled={!editable || busy} onChange={(event) => updateList('extractedActions', index, { ...item, title: event.target.value })} /><select aria-label="Action priority" value={item.priority} disabled={!editable || busy} onChange={(event) => updateList('extractedActions', index, { ...item, priority: event.target.value })}>{['low', 'medium', 'high'].map((priority) => <option key={priority}>{priority}</option>)}</select><input aria-label="Action due date" type="date" value={item.dueDate || ''} disabled={!editable || busy} onChange={(event) => updateList('extractedActions', index, { ...item, dueDate: event.target.value })} />{editable && <button aria-label="Remove action" onClick={() => removeList('extractedActions', index)}>×</button>}</div><textarea aria-label="Action description" placeholder="Action details" value={item.description} disabled={!editable || busy} rows="2" onChange={(event) => updateList('extractedActions', index, { ...item, description: event.target.value })} /></div>)}{!draft.extractedActions.length && <p className="review-none">No actions suggested.</p>}</div></ReviewSection>
+      <ReviewSection icon={<CheckCircle2 />} title="Suggested actions" hint="Confirm that every action is actually required. Add a due date only when the document states one." action={editable && <button onClick={() => setDraft((current) => ({ ...current, actionRequired: true, extractedActions: [...current.extractedActions, { title: '', description: '', priority: 'medium', dueDate: '' }] }))}>+ Add action</button>}><div className="review-edit-list">{!draft.extractedActions.length && <div className="no-action-detected"><CheckCircle2 /><div><strong>No actionable tasks detected</strong><p>This document appears informational. Add an action only if it contains a real obligation you need to complete.</p></div></div>}{draft.extractedActions.map((item, index) => <div className="review-action-card" key={index}><div><input aria-label="Action title" placeholder="Action title" value={item.title} disabled={!editable || busy} onChange={(event) => updateList('extractedActions', index, { ...item, title: event.target.value })} /><select aria-label="Action priority" value={item.priority} disabled={!editable || busy} onChange={(event) => updateList('extractedActions', index, { ...item, priority: event.target.value })}>{['low', 'medium', 'high'].map((priority) => <option key={priority}>{priority}</option>)}</select><input aria-label="Action due date" type="date" value={item.dueDate || ''} disabled={!editable || busy} onChange={(event) => updateList('extractedActions', index, { ...item, dueDate: event.target.value })} />{editable && <button aria-label="Remove action" onClick={() => removeList('extractedActions', index)}>×</button>}</div><textarea aria-label="Action description" placeholder="Action details" value={item.description} disabled={!editable || busy} rows="2" onChange={(event) => updateList('extractedActions', index, { ...item, description: event.target.value })} /></div>)}</div></ReviewSection>
       {['keyInformation', 'risksOrConsequences'].map((field) => <ReviewSection key={field} icon={field === 'keyInformation' ? <FileText /> : <ShieldCheck />} title={field === 'keyInformation' ? 'Key information' : 'Risks & consequences'} hint={field === 'keyInformation' ? 'Keep only important facts found in the document.' : 'Review possible outcomes carefully.'} action={editable && <button onClick={() => setDraft((current) => ({ ...current, [field]: [...current[field], ''] }))}>+ Add item</button>}><div className="review-edit-list">{draft[field].map((item, index) => <div className="review-edit-row" key={index}><input value={item} aria-label={`${field} item`} disabled={!editable || busy} onChange={(event) => updateList(field, index, event.target.value)} />{editable && <button aria-label="Remove item" onClick={() => removeList(field, index)}>×</button>}</div>)}{!draft[field].length && <p className="review-none">No items identified.</p>}</div></ReviewSection>)}
     </div>
     {editable && <footer className="ai-review-actions"><div><ShieldCheck /><span><strong>Your confirmation matters</strong><small>Future automation will only use confirmed information.</small></span></div><Button variant="secondary" disabled={busy} onClick={() => onReject().catch(() => {})}>Reject analysis</Button><Button disabled={busy} onClick={submit}>{busy ? 'Saving review…' : 'Confirm analysis'}</Button></footer>}
@@ -416,53 +457,4 @@ function AiReviewWorkspace({ analysis, busy, serverError, onConfirm, onReject })
 
 function ReviewSection({ icon, title, hint, action, children }) {
   return <section className="review-section"><header><span>{icon}</span><div><h3>{title}</h3><p>{hint}</p></div>{action}</header><div className="review-section-body">{children}</div></section>;
-}
-
-function StructuredPdfText({ text }) {
-  const pageParts = text.split(/\[\[PAGE:\d+\]\]/).filter((part) => part.trim());
-  const pages = pageParts.length ? pageParts : [text];
-  const [pageIndex, setPageIndex] = useState(0);
-  const lines = pages[Math.min(pageIndex, pages.length - 1)].split('\n');
-  const blocks = [];
-  let index = 0;
-  while (index < lines.length) {
-    const line = lines[index].trim();
-    if (!line) { index += 1; continue; }
-    if (line.startsWith('|') && lines[index + 1]?.trim().startsWith('|')) {
-      const tableLines = [];
-      while (index < lines.length && lines[index].trim().startsWith('|')) tableLines.push(lines[index++].trim());
-      const rows = tableLines.map((row) => row.slice(1, -1).split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|').replace(/<br>/g, '\n')));
-      if (rows.length >= 2) blocks.push(<div className="extracted-table-wrap" key={`table-${index}`}><table className="extracted-table"><thead><tr>{rows[0].map((cell, cellIndex) => <th key={cellIndex}>{cell}</th>)}</tr></thead><tbody>{rows.slice(2).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>);
-      continue;
-    }
-    if (line.startsWith('# ')) blocks.push(<h2 className="extracted-title" key={index}>{line.slice(2)}</h2>);
-    else if (line.startsWith('## ')) blocks.push(<h3 className="extracted-section" key={index}>{line.slice(3)}</h3>);
-    else if (/^[•●▪]\s*|^-\s+/.test(line)) {
-      const items = [];
-      while (index < lines.length) {
-        const current = lines[index].trim();
-        if (!/^[•●▪]\s*|^-\s+/.test(current)) break;
-        let item = current.replace(/^[•●▪]\s*|^-\s+/, '');
-        index += 1;
-        while (index < lines.length) {
-          const continuation = lines[index].trim();
-          if (!continuation || /^[•●▪]\s*|^-\s+/.test(continuation) || continuation.startsWith('#') || continuation.startsWith('|')) break;
-          item += ` ${continuation}`;
-          index += 1;
-        }
-        items.push(item);
-        while (index < lines.length && !lines[index].trim()) index += 1;
-      }
-      blocks.push(<ul className="extracted-list" key={`list-${index}`}>{items.map((item, itemIndex) => <li className={/\b(important|warning|must|prohibited|carefully|not accepted|no marks)\b/i.test(item) ? 'emphasis' : ''} key={itemIndex}>{item}</li>)}</ul>);
-      continue;
-    }
-    else {
-      const field = line.match(/^\*\*(.+?):\*\*\s*(.*)$/);
-      const isHeading = index < 3 || (line.length < 100 && /(:$|instructions?|guidelines?|summary|conclusion)/i.test(line));
-      const isWarning = /\b(please read|important|warning|prohibited|not accepted|no marks|must)\b/i.test(line);
-      blocks.push(field ? <div className="extracted-field" key={index}><strong>{field[1]}</strong><span>{field[2]}</span></div> : isHeading ? <h3 className={`extracted-prose-heading ${isWarning ? 'warning' : ''}`} key={index}>{line}</h3> : <p className={isWarning ? 'extracted-warning' : ''} key={index}>{line}</p>);
-    }
-    index += 1;
-  }
-  return <div className="structured-pdf-reader">{pages.length > 1 && <div className="extracted-page-nav"><span>Readable page <strong>{pageIndex + 1}</strong> of {pages.length}</span><div><button disabled={pageIndex === 0} onClick={() => setPageIndex((page) => page - 1)}>Previous</button><button disabled={pageIndex === pages.length - 1} onClick={() => setPageIndex((page) => page + 1)}>Next</button></div></div>}<article className="structured-pdf-text">{blocks}</article>{pages.length > 1 && <div className="extracted-page-footer"><button disabled={pageIndex === 0} onClick={() => setPageIndex((page) => page - 1)}>← Previous page</button><span>{pageIndex + 1} / {pages.length}</span><button disabled={pageIndex === pages.length - 1} onClick={() => setPageIndex((page) => page + 1)}>Next page →</button></div>}</div>;
 }

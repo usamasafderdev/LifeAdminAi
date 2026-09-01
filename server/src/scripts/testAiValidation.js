@@ -11,6 +11,7 @@ function check(condition, label) {
 }
 
 const validResponse = {
+  actionRequired: true,
   summary: 'Submit the internship report by September 10.',
   category: 'university_notice',
   importantDates: [{ date: 'September 10, 2026', description: 'Submission deadline' }],
@@ -64,6 +65,12 @@ async function run() {
   assert.throws(() => validateAiAnalysis(null), AiAnalysisValidationError);
   check(true, 'Empty AI response fails safely');
 
+  const fenced = await analyzeDocumentText(
+    { title: 'Fenced JSON', category: 'other', extractedText: 'Submit the report.' },
+    { generate: async () => ({ text: `\`\`\`json\n${JSON.stringify(validResponse)}\n\`\`\``, model: 'test-model' }) },
+  );
+  check(fenced.extractedActions.length === 1, 'Safe fenced JSON response is parsed');
+
   const extraFields = validateAiAnalysis({ ...validResponse, apiKey: 'must-not-pass', prompt: 'must-not-pass' });
   check(!Object.hasOwn(extraFields, 'apiKey') && !Object.hasOwn(extraFields, 'prompt'), 'Unknown fields ignored');
 
@@ -72,6 +79,13 @@ async function run() {
     { generate: async () => ({ text: JSON.stringify({ ...validResponse, extra: true }), model: 'test-model' }) },
   );
   check(integrated.model === 'test-model' && integrated.summary === validResponse.summary && !Object.hasOwn(integrated, 'extra'), 'Existing document analysis still works');
+
+  let generatedRequest;
+  await analyzeDocumentText(
+    { title: 'Direct assignment', category: 'other', extractedText: 'Complete and submit the assignment.' },
+    { generate: async (request) => { generatedRequest = request; return { text: JSON.stringify(validResponse), model: 'test-model' }; } },
+  );
+  check(generatedRequest.maxTokens === 1500 && generatedRequest.userPrompt.includes('Document text:'), 'Small analysis request uses direct path');
 
   const unsafeStrings = validateAiAnalysis({
     ...validResponse,

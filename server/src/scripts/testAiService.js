@@ -49,6 +49,49 @@ async function run() {
     usage: { inputTokens: 2, outputTokens: 3, totalTokens: 5 },
   });
 
+  let structuredRequest;
+  await generateText(
+    { userPrompt: 'Return JSON', maxTokens: 20, jsonSchema: { type: 'object', properties: {}, additionalProperties: false } },
+    {
+      config,
+      client: { chat: { completions: { create: async (request) => {
+        structuredRequest = request;
+        return { choices: [{ message: { content: '{}' } }] };
+      } } } },
+    },
+  );
+  assert.equal(structuredRequest.response_format, undefined);
+  assert.equal(structuredRequest.reasoning_effort, undefined);
+
+  let reasoningRequest;
+  await generateText(
+    { userPrompt: 'Return JSON', maxTokens: 20, jsonSchema: { type: 'object' } },
+    {
+      config: { ...config, model: 'openai/gpt-oss-20b' },
+      client: { chat: { completions: { create: async (request) => {
+        reasoningRequest = request;
+        return { choices: [{ message: { content: '{}' } }] };
+      } } } },
+    },
+  );
+  assert.equal(reasoningRequest.reasoning_effort, 'low');
+  assert.equal(reasoningRequest.include_reasoning, false);
+
+  let recoveryAttempts = 0;
+  const recovered = await generateText(
+    { userPrompt: 'Return JSON', maxTokens: 20, jsonSchema: { type: 'object' } },
+    {
+      config,
+      client: { chat: { completions: { create: async () => {
+        recoveryAttempts += 1;
+        if (recoveryAttempts === 1) throw Object.assign(new Error('temporarily unavailable'), { status: 503 });
+        return { choices: [{ message: { content: '{"recovered":true}' } }] };
+      } } } },
+    },
+  );
+  assert.equal(recoveryAttempts, 2);
+  assert.equal(recovered.text, '{"recovered":true}');
+
   await expectAiError('AI_INVALID_RESPONSE', {
     chat: { completions: { create: async () => ({ choices: [] }) } },
   });
@@ -68,6 +111,9 @@ async function run() {
   console.log('AI service tests.................... PASS');
   console.log('Missing configuration............... PASS');
   console.log('Response and error normalization.... PASS');
+  console.log('Application-validated JSON mode..... PASS');
+  console.log('GPT-OSS reasoning budget controlled. PASS');
+  console.log('Transient generation recovered...... PASS');
 }
 
 run().catch((error) => {

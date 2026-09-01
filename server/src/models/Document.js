@@ -33,6 +33,7 @@ const extractedActionSchema = new mongoose.Schema(
 
 const confirmedAnalysisSchema = new mongoose.Schema(
   {
+    actionRequired: { type: Boolean, default: false },
     summary: { type: String, default: '', maxlength: 5000 },
     category: { type: String, enum: ['', ...DOCUMENT_CATEGORIES], default: '' },
     importantDates: { type: [importantDateSchema], default: [] },
@@ -50,6 +51,7 @@ const aiAnalysisSchema = new mongoose.Schema(
       enum: ['not_started', 'processing', 'completed', 'failed'],
       default: 'not_started',
     },
+    actionRequired: { type: Boolean, default: false },
     summary: { type: String, default: '', maxlength: 5000 },
     category: { type: String, default: '', maxlength: 200 },
     importantDates: { type: [importantDateSchema], default: [] },

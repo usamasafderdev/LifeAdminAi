@@ -53,8 +53,10 @@ export function AppProvider({ children }) {
     return updated;
   };
   const deleteDocument = async (id) => {
-    await documentService.remove(id);
+    const result = await documentService.remove(id);
     setDocuments((current) => current.filter((document) => document.id !== id));
+    setTasks((current) => current.filter((task) => String(task.documentId) !== String(id)));
+    return result;
   };
   const createTask = async (values) => { const task = await taskService.create(values); setTasks((current) => [task, ...current]); return task; };
   const updateTask = async (id, values) => { const task = await taskService.update(id, values); setTasks((current) => current.map((item) => item.id === id ? task : item)); return task; };

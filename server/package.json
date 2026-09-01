@@ -21,7 +21,11 @@
     "test:ai-validation": "node src/scripts/testAiValidation.js",
     "test:ai-review": "node src/scripts/testAiReview.js",
     "test:tasks": "node src/scripts/testTasks.js",
-    "test:task-generation": "node src/scripts/testTaskGeneration.js"
+    "test:task-generation": "node src/scripts/testTaskGeneration.js",
+    "test:priority": "node src/scripts/testPriorityEngine.js",
+    "test:actionability": "node src/scripts/testActionability.js",
+    "test:long-document-ai": "node src/scripts/testLongDocumentAi.js",
+    "test:document-task-cleanup": "node src/scripts/testDocumentTaskCleanup.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

@@ -13,6 +13,10 @@ export function mapTask(task) {
     sourceType: task.source,
     category: task.source === 'ai_confirmed' ? 'AI Confirmed' : 'Personal',
     priority: task.priority?.toUpperCase() || 'MEDIUM',
+    calculatedPriority: task.calculatedPriority?.toUpperCase() || task.priority?.toUpperCase() || 'LOW',
+    priorityOverride: task.priorityOverride?.toUpperCase() || '',
+    priorityScore: Number(task.priorityScore) || 0,
+    priorityReasons: Array.isArray(task.priorityReasons) ? task.priorityReasons : [],
     status: statusLabels[task.status] || 'Pending',
     date,
     due: date || 'No due date',
@@ -24,6 +28,7 @@ function toApiTask(values) {
   if (Object.hasOwn(values, 'title')) payload.title = values.title;
   if (Object.hasOwn(values, 'description')) payload.description = values.description;
   if (Object.hasOwn(values, 'priority')) payload.priority = values.priority.toLowerCase();
+  if (Object.hasOwn(values, 'priorityOverride')) payload.priorityOverride = values.priorityOverride ? values.priorityOverride.toLowerCase() : null;
   if (Object.hasOwn(values, 'status')) payload.status = statusValues[values.status] || values.status;
   if (Object.hasOwn(values, 'dueDate') || Object.hasOwn(values, 'date')) payload.dueDate = values.dueDate ?? values.date ?? null;
   return payload;

@@ -12,6 +12,7 @@ const LIMITS = Object.freeze({
 });
 
 const ANALYSIS_FIELDS = [
+  'actionRequired',
   'summary',
   'category',
   'importantDates',
@@ -123,11 +124,13 @@ export function validateAiAnalysis(rawAnalysis) {
   }
 
   const category = normalizeString(rawAnalysis.category, LIMITS.category).toLowerCase();
+  const actionRequired = rawAnalysis.actionRequired === true;
   return {
+    actionRequired,
     summary: normalizeString(rawAnalysis.summary, LIMITS.summary),
     category: DOCUMENT_CATEGORIES.includes(category) ? category : '',
     importantDates: normalizeImportantDates(rawAnalysis.importantDates),
-    extractedActions: normalizeActions(rawAnalysis.extractedActions),
+    extractedActions: actionRequired ? normalizeActions(rawAnalysis.extractedActions) : [],
     keyInformation: normalizeStringList(rawAnalysis.keyInformation),
     risksOrConsequences: normalizeStringList(rawAnalysis.risksOrConsequences),
   };
@@ -140,7 +143,9 @@ function hasOnlyFields(value, fields) {
 export function validateConfirmedAnalysis(rawAnalysis) {
   const invalid = () => { throw new AnalysisConfirmationValidationError(); };
   if (!rawAnalysis || typeof rawAnalysis !== 'object' || Array.isArray(rawAnalysis)) invalid();
-  if (!hasOnlyFields(rawAnalysis, ANALYSIS_FIELDS) || !ANALYSIS_FIELDS.every((field) => Object.hasOwn(rawAnalysis, field))) invalid();
+  const confirmationFields = ANALYSIS_FIELDS.filter((field) => field !== 'actionRequired');
+  if (!hasOnlyFields(rawAnalysis, ANALYSIS_FIELDS) || !confirmationFields.every((field) => Object.hasOwn(rawAnalysis, field))) invalid();
+  if (rawAnalysis.actionRequired !== undefined && typeof rawAnalysis.actionRequired !== 'boolean') invalid();
   if (typeof rawAnalysis.summary !== 'string' || rawAnalysis.summary.length > LIMITS.summary) invalid();
   if (typeof rawAnalysis.category !== 'string' || (rawAnalysis.category && !DOCUMENT_CATEGORIES.includes(rawAnalysis.category.toLowerCase()))) invalid();
   for (const field of ['importantDates', 'extractedActions', 'keyInformation', 'risksOrConsequences']) {
@@ -159,7 +164,7 @@ export function validateConfirmedAnalysis(rawAnalysis) {
   if ([...rawAnalysis.keyInformation, ...rawAnalysis.risksOrConsequences]
     .some((item) => typeof item !== 'string' || !normalizeString(item, LIMITS.listItem))) invalid();
 
-  return validateAiAnalysis(rawAnalysis);
+  return validateAiAnalysis({ ...rawAnalysis, actionRequired: rawAnalysis.extractedActions.length > 0 });
 }
 
 export { LIMITS };

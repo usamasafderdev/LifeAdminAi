@@ -52,7 +52,7 @@ async function run() {
 
     const serviceDocument = { _id: new mongoose.Types.ObjectId(), aiAnalysis: { reviewStatus: 'confirmed', confirmedAnalysis: { extractedActions: [{ title: 'Normalized action', priority: 'HIGH', dueDate: 'not-a-date' }] } } };
     const prepared = await generateTasksFromAnalysis(serviceDocument, a.body.user._id);
-    check(prepared.tasks[0].priority === 'high', 'Invalid priority casing normalized');
+    check(prepared.tasks[0].confirmedPriority === 'high', 'Invalid priority casing normalized');
     check(prepared.tasks[0].dueDate === null, 'Invalid dates rejected safely');
     check((await request(`/api/documents/${confirmed._id}/create-tasks`, { method: 'POST', token: b.body.token })).status === 404, 'User isolation works');
 

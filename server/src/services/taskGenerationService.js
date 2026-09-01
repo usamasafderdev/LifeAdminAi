@@ -1,5 +1,6 @@
 import Task from '../models/Task.js';
 import { validateTaskInput } from './taskValidator.js';
+import { applyTaskPriority } from './taskPriorityService.js';
 
 function normalizePriority(value) {
   const priority = typeof value === 'string' ? value.trim().toLowerCase() : 'medium';
@@ -23,7 +24,7 @@ function selectedActions(actions, actionIndexes) {
   return [...new Set(actionIndexes)].map((index) => actions[index]);
 }
 
-export async function generateTasksFromAnalysis(document, userId, { actionIndexes } = {}) {
+export async function generateTasksFromAnalysis(document, userId, { actionIndexes, now = new Date() } = {}) {
   const confirmed = document?.aiAnalysis?.confirmedAnalysis;
   const actions = confirmed?.extractedActions;
   if (document?.aiAnalysis?.reviewStatus !== 'confirmed' || !confirmed || !Array.isArray(actions)) {
@@ -55,7 +56,9 @@ export async function generateTasksFromAnalysis(document, userId, { actionIndexe
       status: 'pending',
       dueDate: normalizeDueDate(action.dueDate),
     });
-    tasks.push({ ...values, userId, documentId: document._id, source: 'ai_confirmed' });
+    const confirmedPriority = values.priority;
+    delete values.priority;
+    tasks.push(applyTaskPriority({ ...values, confirmedPriority, priorityOverride: null, userId, documentId: document._id, source: 'ai_confirmed' }, { now }));
     knownTitles.add(duplicateKey);
   }
 
