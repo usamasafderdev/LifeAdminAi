@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Bell,
+  CalendarDays,
+  ChevronDown,
+  Clock3,
+  FileText,
+  ListChecks,
+  MoreHorizontal,
+  RefreshCw,
+  Sparkles,
+  Target,
+} from 'lucide-react';
 import { Button } from './UI';
 import { briefingService } from '../services/briefingService';
 import { getErrorMessage } from '../services/api';
@@ -93,152 +105,321 @@ export default function DailyBriefingCard() {
         {error && <span role="alert">{error}</span>}
       </div>
     );
+
   const briefing = data?.briefing;
   return (
     <section className="panel daily-briefing" aria-label="AI Daily Briefing">
-      <header className="section-head">
-        <div>
-          <h2>Your day with LifeAdmin</h2>
-          <p>
-            {briefing?.date || 'Daily briefing'}
-            {data?.generatedAt
-              ? ` · Updated ${new Date(data.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              : ''}
+      <header className="briefing-header">
+        <div className="briefing-title-wrap">
+          <div className="briefing-kicker">
+            <Sparkles size={16} />
+            <span>LifeAdmin Daily Briefing</span>
+          </div>
+          <h2 className="briefing-title">Your Day with LifeAdmin</h2>
+          <p className="briefing-subtitle">
+            Here is your personalized daily productivity overview.
           </p>
+          <div className="briefing-date-row">
+            <span className="briefing-date">{briefing?.date || 'Daily briefing'}</span>
+            {data?.generatedAt && (
+              <span className="briefing-updated">
+                {' '}
+                · Last updated{' '}
+                {new Date(data.generatedAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
+          </div>
         </div>
+
         <div className="briefing-controls">
           <Button
-            variant="secondary"
+            variant="primary"
+            className="briefing-refresh-button"
             disabled={busy || data?.generating}
             onClick={() => {
               retries.current = 0;
               load(true);
             }}
           >
-            {briefing ? 'Refresh briefing' : 'Generate new briefing'}
+            <RefreshCw size={14} />
+            {briefing ? 'Refresh' : 'Generate'}
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => update({ hidden: true })}>
-            Hide
-          </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => update({ enabled: false })}>
-            Disable daily briefing
-          </Button>
+
+          <details className="briefing-menu">
+            <summary className="briefing-menu-trigger">
+              <MoreHorizontal size={14} />
+              <span>Options</span>
+              <ChevronDown size={14} />
+            </summary>
+            <div className="briefing-menu-panel">
+              <button
+                className="briefing-menu-option"
+                disabled={busy}
+                onClick={() => update({ hidden: true })}
+              >
+                Hide briefing
+              </button>
+              <button
+                className="briefing-menu-option"
+                disabled={busy}
+                onClick={() => update({ enabled: false })}
+              >
+                Disable daily briefing
+              </button>
+            </div>
+          </details>
         </div>
       </header>
+
       {error && (
-        <p role="alert">
-          {error}{' '}
+        <div className="briefing-alert" role="alert">
+          <span>{error}</span>
           <button type="button" onClick={() => load()}>
             Try again
           </button>
-        </p>
+        </div>
       )}
+
       {(busy || data?.generating) && (
-        <p role="status">
-          {data?.generating ? 'Your briefing is being prepared.' : 'Loading your briefing…'}
-        </p>
+        <div className="briefing-loading" role="status">
+          <Sparkles size={14} />
+          <span>
+            {data?.generating ? 'Your briefing is being prepared.' : 'Loading your briefing…'}
+          </span>
+        </div>
       )}
+
       {briefing && (
-        <>
-          <p className="briefing-summary">{briefing.summary}</p>
-          {data.mode === 'fallback' && (
-            <small>
-              Based on your current records. AI recommendations are temporarily unavailable.
-            </small>
-          )}
+        <div className="briefing-content">
+          <section className="briefing-summary-card">
+            <div className="briefing-summary-card-head">
+              <Sparkles size={16} />
+              <span>AI Recommendations</span>
+            </div>
+            <p className="briefing-summary">{briefing.summary}</p>
+            {data.mode === 'fallback' && (
+              <small className="briefing-fallback">
+                Based on your current records. AI recommendations are temporarily unavailable.
+              </small>
+            )}
+          </section>
+
           <div className="briefing-grid">
-            <section>
-              <h3>Today's schedule</h3>
-              {briefing.scheduledBlocks?.length ? <ul>{briefing.scheduledBlocks.map(block => <li key={block._id}><Link to="/app/calendar">{block.title}</Link><span>{new Date(block.startTime).toLocaleTimeString([], { timeZone: data.timeZone, hour: '2-digit', minute: '2-digit' })} to {new Date(block.endTime).toLocaleTimeString([], { timeZone: data.timeZone, hour: '2-digit', minute: '2-digit' })}</span></li>)}</ul> : <p>No scheduled blocks today.</p>}
-              <h3>Focus Today</h3>
+            <section className="briefing-card briefing-card-focus">
+              <div className="briefing-card-head">
+                <span className="briefing-card-icon">
+                  <Target size={16} />
+                </span>
+                <span className="briefing-card-title">Today's Focus</span>
+              </div>
               {briefing.focusTasks.length ? (
-                <ol>
+                <div className="briefing-task-list">
                   {briefing.focusTasks.map((task) => (
-                    <li key={task.taskId}>
-                      <Link to={`/app/tasks?task=${task.taskId}`}>{task.title}</Link>
-                      <span>
-                        {task.priority} priority{task.dueDate ? ` · Due ${task.dueDate}` : ''}
-                      </span>
-                      <p className={task.attention === 'high' ? 'briefing-high-attention' : ''}>
+                    <article className="briefing-task-card" key={task.taskId}>
+                      <div className="briefing-task-card-top">
+                        <Link className="briefing-task-title" to={`/app/tasks?task=${task.taskId}`}>
+                          {task.title}
+                        </Link>
+                        <span className={`briefing-priority priority-${task.priority}`}>
+                          {task.priority}
+                        </span>
+                      </div>
+                      <div className="briefing-task-meta">
+                        <span className="briefing-date-chip">
+                          <CalendarDays size={13} />
+                          {task.dueDate ? `Due ${task.dueDate}` : 'No date'}
+                        </span>
+                      </div>
+                      <p
+                        className={
+                          task.attention === 'high'
+                            ? 'briefing-task-reason high'
+                            : 'briefing-task-reason'
+                        }
+                      >
                         {task.reason}
                       </p>
+                      <div className="briefing-task-card-action">
+                        <Link className="briefing-view-link" to={`/app/tasks?task=${task.taskId}`}>
+                          View Task
+                        </Link>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="briefing-empty-card">
+                  <Sparkles size={16} />
+                  <span>No urgent tasks. Enjoy your day.</span>
+                </div>
+              )}
+            </section>
+
+            <section className="briefing-card">
+              <div className="briefing-card-head">
+                <span className="briefing-card-icon">
+                  <CalendarDays size={16} />
+                </span>
+                <span className="briefing-card-title">Today's Schedule</span>
+              </div>
+              {briefing.scheduledBlocks?.length ? (
+                <ul className="briefing-list">
+                  {briefing.scheduledBlocks.map((block) => (
+                    <li key={block._id} className="briefing-list-item">
+                      <Link className="briefing-list-title" to="/app/calendar">
+                        {block.title}
+                      </Link>
+                      <span className="briefing-list-meta">
+                        {new Date(block.startTime).toLocaleTimeString([], {
+                          timeZone: data.timeZone,
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}{' '}
+                        to{' '}
+                        {new Date(block.endTime).toLocaleTimeString([], {
+                          timeZone: data.timeZone,
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
                     </li>
                   ))}
-                </ol>
+                </ul>
               ) : (
-                <p>No open tasks need attention.</p>
+                <div className="briefing-empty-card">
+                  <CalendarDays size={16} />
+                  <span>No events scheduled today.</span>
+                </div>
               )}
               {briefing.todayReminders.length > 0 && (
-                <>
-                  <h4>Today's reminders</h4>
-                  <ul>
+                <div className="briefing-sublist-wrap">
+                  <div className="briefing-mini-head">
+                    <Bell size={14} />
+                    <span>Today's reminders</span>
+                  </div>
+                  <ul className="briefing-list">
                     {briefing.todayReminders.map((item) => (
-                      <li key={item.sourceId}>
-                        <Link to={eventPath(item)}>{item.title}</Link>
-                        <span>{eventDate(item)}</span>
+                      <li className="briefing-list-item" key={item.sourceId}>
+                        <Link className="briefing-list-title" to={eventPath(item)}>
+                          {item.title}
+                        </Link>
+                        <span className="briefing-list-meta">{eventDate(item)}</span>
                       </li>
                     ))}
                   </ul>
-                </>
+                </div>
               )}
             </section>
-            <section>
-              <h3>Upcoming</h3>
+
+            <section className="briefing-card">
+              <div className="briefing-card-head">
+                <span className="briefing-card-icon">
+                  <Clock3 size={16} />
+                </span>
+                <span className="briefing-card-title">Upcoming</span>
+              </div>
               {briefing.upcomingEvents.length ? (
-                <ul>
+                <ul className="briefing-list">
                   {briefing.upcomingEvents.map((item) => (
-                    <li key={`${item.type}-${item.sourceId}`}>
-                      <Link to={eventPath(item)}>{item.title}</Link>
-                      <span>{eventDate(item)}</span>
+                    <li className="briefing-list-item" key={`${item.type}-${item.sourceId}`}>
+                      <Link className="briefing-list-title" to={eventPath(item)}>
+                        {item.title}
+                      </Link>
+                      <span className="briefing-list-meta">{eventDate(item)}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p>No upcoming items in the next 14 days.</p>
+                <div className="briefing-empty-card">
+                  <Clock3 size={16} />
+                  <span>No upcoming events scheduled.</span>
+                </div>
               )}
             </section>
-            <section>
-              <h3>Recommendations</h3>
+
+            <section className="briefing-card briefing-card-recommendations">
+              <div className="briefing-card-head">
+                <span className="briefing-card-icon">
+                  <Sparkles size={16} />
+                </span>
+                <span className="briefing-card-title">AI Recommendations</span>
+              </div>
               {briefing.recommendations.length ? (
-                <ul>
+                <ul className="briefing-recommendation-list">
                   {briefing.recommendations.map((text) => (
-                    <li key={text}>{text}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No extra actions recommended.</p>
-              )}
-              <h4>Recent documents</h4>
-              {briefing.recentDocuments.length ? (
-                <ul>
-                  {briefing.recentDocuments.map((item) => (
-                    <li key={item.documentId}>
-                      <Link to={`/app/documents/${item.documentId}`}>{item.title}</Link>
+                    <li key={text}>
+                      <Sparkles size={13} />
+                      <span>{text}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p>No documents yet.</p>
+                <div className="briefing-empty-card">
+                  <Sparkles size={16} />
+                  <span>No extra actions recommended.</span>
+                </div>
               )}
+            </section>
+
+            <section className="briefing-card">
+              <div className="briefing-card-head">
+                <span className="briefing-card-icon">
+                  <FileText size={16} />
+                </span>
+                <span className="briefing-card-title">Recent Documents</span>
+              </div>
+              {briefing.recentDocuments.length ? (
+                <ul className="briefing-list">
+                  {briefing.recentDocuments.map((item) => (
+                    <li className="briefing-list-item" key={item.documentId}>
+                      <Link
+                        className="briefing-list-title"
+                        to={`/app/documents/${item.documentId}`}
+                      >
+                        {item.title}
+                      </Link>
+                      <span className="briefing-list-meta">Document</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="briefing-empty-card">
+                  <FileText size={16} />
+                  <span>No documents yet.</span>
+                </div>
+              )}
+
               {briefing.importantDocuments.length > 0 && (
-                <>
-                  <h4>Documents needing review</h4>
-                  <ul>
+                <div className="briefing-sublist-wrap">
+                  <div className="briefing-mini-head">
+                    <Sparkles size={14} />
+                    <span>Documents needing review</span>
+                  </div>
+                  <ul className="briefing-list">
                     {briefing.importantDocuments.map((item) => (
-                      <li key={item.documentId}>
-                        <Link to={`/app/documents/${item.documentId}`}>{item.title}</Link>
+                      <li className="briefing-list-item" key={item.documentId}>
+                        <Link
+                          className="briefing-list-title"
+                          to={`/app/documents/${item.documentId}`}
+                        >
+                          {item.title}
+                        </Link>
                       </li>
                     ))}
                   </ul>
-                </>
+                </div>
               )}
             </section>
           </div>
-          <small>
+
+          <small className="briefing-footnote">
             This daily snapshot is reused. Refresh briefing after changing tasks, reminders, or
             documents.
           </small>
-        </>
+        </div>
       )}
     </section>
   );

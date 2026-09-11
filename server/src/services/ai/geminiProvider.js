@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AI_ERROR_CODES, AiError } from './aiError.js';
 
 export function normalizeGeminiError(error) {
@@ -12,13 +12,53 @@ export function normalizeGeminiError(error) {
   return new AiError(AI_ERROR_CODES.REQUEST_FAILED, { statusCode: 502, cause: error });
 }
 
-export async function generateWithGemini({ config, systemPrompt, userPrompt, temperature, maxTokens, client: suppliedClient }) {
-  const client = suppliedClient || new GoogleGenAI({ apiKey: config.geminiApiKey, httpOptions: { timeout: config.timeoutMs } });
+export async function generateWithGemini({
+  config,
+  systemPrompt,
+  userPrompt,
+  temperature,
+  maxTokens,
+  client: suppliedClient,
+}) {
+  const client = suppliedClient || new GoogleGenerativeAI(config.geminiApiKey);
   try {
-    const response = await client.models.generateContent({ model: config.geminiModel, contents: userPrompt, config: { ...(systemPrompt ? { systemInstruction: systemPrompt } : {}), temperature, maxOutputTokens: maxTokens } });
-    const text = String(response?.text || '').trim();
-    if (!text) throw new AiError(AI_ERROR_CODES.INVALID_RESPONSE, { statusCode: 502 });
-    const usage = response?.usageMetadata;
-    return { text, provider: 'gemini', model: response?.modelVersion || config.geminiModel, usage: usage ? { inputTokens: usage.promptTokenCount ?? null, outputTokens: usage.candidatesTokenCount ?? null, totalTokens: usage.totalTokenCount ?? null } : { inputTokens: null, outputTokens: null, totalTokens: null } };
-  } catch (error) { throw normalizeGeminiError(error); }
+    const model = client.getGenerativeModel({
+      model: config.geminiModel || 'gemini-2.5-flash',
+      ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+      generationConfig: {
+        temperature,
+        maxOutputTokens: maxTokens,
+      },
+    });
+
+    const responseObject = await model.generateContent(userPrompt);
+    const response = responseObject?.response || responseObject;
+    const text = typeof response?.text === 'function'
+      ? String(response.text() || '').trim()
+      : String(response?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join('') || response?.text || '').trim();
+
+    if (!text) {
+      throw new AiError(AI_ERROR_CODES.INVALID_RESPONSE, { statusCode: 502 });
+    }
+
+    const usage = responseObject?.usageMetadata || response?.usageMetadata;
+    return {
+      text,
+      provider: 'gemini',
+      model: responseObject?.modelVersion || response?.modelVersion || config.geminiModel || 'gemini-2.5-flash',
+      usage: usage
+        ? {
+            inputTokens: usage.promptTokenCount ?? null,
+            outputTokens: usage.candidatesTokenCount ?? null,
+            totalTokens: usage.totalTokenCount ?? null,
+          }
+        : {
+            inputTokens: null,
+            outputTokens: null,
+            totalTokens: null,
+          },
+    };
+  } catch (error) {
+    throw normalizeGeminiError(error);
+  }
 }

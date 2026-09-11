@@ -440,17 +440,28 @@ export async function analyzeTogether(req, res, next) {
   try {
     const rawIds = Array.isArray(req.body?.documentIds) ? req.body.documentIds : [];
     if (!rawIds.length) return res.status(400).json(invalid('Select at least two documents.'));
-    const ids = [...new Set(rawIds.map(String))];
+
+    const ids = [...new Set(rawIds.map(String).filter(Boolean))]
+      .filter((value) => mongoose.isObjectIdOrHexString(value))
+      .sort();
+
     if (ids.length < 2) return res.status(400).json(invalid('Select at least two documents.'));
-    const report = await generateMultiDocumentAnalysis({ userId: req.user._id, documentIds: ids });
-    const saved = await DocumentAnalysisHistory.create({
-      userId: req.user._id,
-      selectedDocuments: ids.map((value) => new mongoose.Types.ObjectId(value)),
-      createdAt: new Date(),
-      summaryReference: report.summary || 'Document intelligence analysis',
+
+    const objects = await generateMultiDocumentAnalysis({ userId: req.user._id, documentIds: ids });
+    const report = {
+      summary: objects.summary,
+      connections: objects.connections,
+      conflicts: objects.conflicts,
+      importantInformation: objects.importantInformation,
+      suggestedActions: objects.suggestedActions,
+      relationships: objects.relationships,
+    };
+
+    return res.status(200).json({
+      success: true,
       report,
+      history: { id: objects.history?.id || null },
     });
-    return res.status(200).json({ success: true, report, history: { id: saved._id } });
   } catch (error) {
     return next(error);
   }

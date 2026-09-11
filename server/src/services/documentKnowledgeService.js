@@ -6,7 +6,7 @@ import { getDocumentChatConfig, normalizeTerms, scoreChunk } from './documentCha
 import { embeddingService } from './embeddingService.js';
 import { vectorStoreService } from './vectorStoreService.js';
 
-export const NOT_FOUND = 'I could not find this information in the document.';
+export const NOT_FOUND = 'I could not find this information in your documents.';
 const unavailable = () =>
   Object.assign(new Error('Document knowledge is temporarily unavailable. Please try again.'), {
     statusCode: 503,

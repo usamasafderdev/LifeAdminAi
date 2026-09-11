@@ -1,7 +1,6 @@
 import {
   retrieveDocumentKnowledge,
   workspaceKnowledgeCandidates,
-  NOT_FOUND,
 } from './documentKnowledgeService.js';
 import Document from '../models/Document.js';
 import Reminder from '../models/Reminder.js';
@@ -92,6 +91,10 @@ async function taskSources(userId, tasks, detail) {
 
 export function classifyWorkspaceQuery(message) {
   const q = String(message || '').toLowerCase();
+  const workspaceTerms = /(task|tasks|due|deadline|document|documents|uploaded file|pdf|upload|reminder|calendar|schedule|event|workspace|notes|remind|plan|invoice|invoice|report|memory|previous|history)/i;
+  const generalTerms = /(where can i buy|where can i get|where can i find|from where can i buy|from where i can buy|give me .*shop|shops with location|physical shop|location|recommend|recommendation|explain|who is the best|best .*brand|what is|who is|when is|how do i|why is|tell me about|machine learning|compare)/i;
+  if (generalTerms.test(q) && !workspaceTerms.test(q)) return 'general_knowledge';
+  if (/\b(where can i buy|where can i get|where can i find|from where can i buy|from where i can buy|buy.*bat|where.*bat).*?\b/.test(q)) return 'general_knowledge';
   if (
     /\b(?:on\s+)?(?:20\d{2}-\d{1,2}-\d{1,2}|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2})\b/.test(
       q,
@@ -152,6 +155,22 @@ function direct(answer, sources = [], metadata = {}) {
 export async function retrieveWorkspace({ userId, message, date = {} }) {
   const kind = classifyWorkspaceQuery(message);
   const { now, today, timezoneOffset } = dateOptions(date);
+  if (kind === 'general_knowledge') {
+    return {
+      direct: false,
+      kind,
+      context: '',
+      sources: [],
+      metadata: {
+        kind,
+        selectedTasks: 0,
+        selectedReminders: 0,
+        selectedDocuments: 0,
+        contextCharacters: 0,
+        today,
+      },
+    };
+  }
   if (kind === 'document_count') {
     const count = await Document.countDocuments({ userId });
     return direct(`**${count} document${count === 1 ? '' : 's'}.**`, [], { kind, count });
@@ -400,7 +419,21 @@ export async function retrieveWorkspace({ userId, message, date = {} }) {
       { kind: 'empty' },
     );
   if (kind === 'semantic_documents' && !docContexts.length)
-    return direct(NOT_FOUND, [], { kind, today });
+    return {
+      hasEvidence: false,
+      direct: false,
+      kind,
+      context: null,
+      sources: [],
+      metadata: {
+        kind,
+        selectedTasks: 0,
+        selectedReminders: 0,
+        selectedDocuments: 0,
+        contextCharacters: 0,
+        today,
+      },
+    };
   if (kind === 'semantic_documents') {
     const context =
       `RELEVANT DOCUMENT EXCERPTS (${docContexts.length} documents):\n${docContexts.map(({ doc, selected }) => `[Document: ${doc.title}]\n${selected.context}`).join('\n\n') || 'None'}`.slice(

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
 import Document from '../models/Document.js';
 import DocumentRelationship from '../models/DocumentRelationship.js';
+import DocumentAnalysisHistory from '../models/DocumentAnalysisHistory.js';
 import { generateText } from './ai/aiService.js';
 import { validateAiAnalysis } from './aiAnalysisValidator.js';
 
@@ -153,6 +154,10 @@ export async function generateMultiDocumentAnalysis({
 }) {
   const docs = await validateDocumentSelection(userId, documentIds);
   const endpoint = docs.length;
+  const normalizedIds = [...new Set(documentIds.map(String))]
+    .filter((id) => mongoose.isObjectIdOrHexString(id))
+    .sort();
+  const objectIds = normalizedIds.map((id) => new mongoose.Types.ObjectId(id));
   const context = docs.map((doc) => ({
     id: String(doc.id),
     title: doc.title,
@@ -392,12 +397,47 @@ export async function generateMultiDocumentAnalysis({
     }
   }
 
+  const existingHistory = await DocumentAnalysisHistory.findOne({
+    userId,
+    selectedDocuments: { $all: objectIds, $size: objectIds.length },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (!existingHistory) {
+    const saved = await DocumentAnalysisHistory.create({
+      userId,
+      selectedDocuments: objectIds,
+      createdAt: new Date(),
+      summaryReference: mergedOutput.summary || 'Document intelligence analysis',
+      report: {
+        summary: mergedOutput.summary,
+        connections: mergedOutput.connections,
+        conflicts: mergedOutput.conflicts,
+        importantInformation: mergedOutput.importantInformation,
+        suggestedActions: mergedOutput.suggestedActions,
+        relationships: relationshipRows,
+      },
+    });
+
+    return {
+      summary: mergedOutput.summary,
+      connections: mergedOutput.connections,
+      conflicts: mergedOutput.conflicts,
+      importantInformation: mergedOutput.importantInformation,
+      suggestedActions: mergedOutput.suggestedActions,
+      relationships: relationshipRows,
+      history: { id: saved._id },
+    };
+  }
+
   return {
-    summary: mergedOutput.summary,
-    connections: mergedOutput.connections,
-    conflicts: mergedOutput.conflicts,
-    importantInformation: mergedOutput.importantInformation,
-    suggestedActions: mergedOutput.suggestedActions,
-    relationships: relationshipRows,
+    summary: existingHistory.report?.summary || mergedOutput.summary,
+    connections: existingHistory.report?.connections || mergedOutput.connections,
+    conflicts: existingHistory.report?.conflicts || mergedOutput.conflicts,
+    importantInformation: existingHistory.report?.importantInformation || mergedOutput.importantInformation,
+    suggestedActions: existingHistory.report?.suggestedActions || mergedOutput.suggestedActions,
+    relationships: existingHistory.report?.relationships || relationshipRows,
+    history: { id: existingHistory._id },
   };
 }

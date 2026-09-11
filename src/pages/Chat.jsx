@@ -200,7 +200,7 @@ export function AskLifeAdmin() {
     <>
       <PageHeader
         title="Ask LifeAdmin"
-        description="Ask questions across your documents, tasks, and reminders."
+        description="Ask LifeAdmin anything. It uses your workspace context when available and general AI knowledge when needed."
         action={
           messages.length > 0 && (
             <Button variant="secondary" onClick={() => setConfirmClear(true)}>

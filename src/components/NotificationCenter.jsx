@@ -123,25 +123,25 @@ export default function NotificationCenter() {
       </IconButton>
       {open && (
         <section
-          className="popover notification-pop notification-center"
+          className="notification-pop notification-center"
           aria-label="Notifications"
         >
-          <div className="pop-head">
-            <div>
+          <header className="notification-pop-head">
+            <div className="notification-pop-title">
               <strong>Notifications</strong>
               <small>{app.unreadCount} unread</small>
             </div>
             <IconButton label="Close notifications" onClick={() => setOpen(false)}>
               <X size={16} />
             </IconButton>
-          </div>
+          </header>
           {(app.notificationsError || error) && (
             <p role="alert" className="notification-alert">
               {app.notificationsError || error}{' '}
               <button onClick={app.reloadNotifications}>Retry</button>
             </p>
           )}
-          <div className="notification-toolbar">
+          <section className="notification-pop-actions">
             <button
               className="notification-read-all"
               disabled={!app.unreadCount || app.notificationsLoading || busy}
@@ -160,8 +160,8 @@ export default function NotificationCenter() {
             >
               {busy ? 'Updating…' : 'Mark all read'}
             </button>
-          </div>
-          <div className="notification-scroll">
+          </section>
+          <section className="notification-scroll">
             {app.notificationsLoading && !app.notifications.length && (
               <p className="empty-state">Loading notifications…</p>
             )}
@@ -171,14 +171,16 @@ export default function NotificationCenter() {
             {sorted.map((n) => (
               <NotificationItem key={n._id} notification={n} onNavigate={() => setOpen(false)} />
             ))}
-          </div>
-          <Link
-            className="notification-view-all"
-            to="/app/notifications"
-            onClick={() => setOpen(false)}
-          >
-            View all notifications
-          </Link>
+          </section>
+          <footer className="notification-pop-footer">
+            <Link
+              className="notification-view-all"
+              to="/app/notifications"
+              onClick={() => setOpen(false)}
+            >
+              View all notifications
+            </Link>
+          </footer>
         </section>
       )}
     </div>

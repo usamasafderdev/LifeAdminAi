@@ -143,18 +143,19 @@ export default function Documents() {
       const result = await documentService.analyzeTogether(selectedIds);
       const report = result?.report || result;
       const history = readAnalysisHistory();
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const normalizedIds = selectedIds.map(String);
+      const persistedId = String(result?.history?.id || result?._id || '');
+      const selectedDocIds = [...new Set(selectedIds.map(String))].sort();
+      const id = persistedId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const entry = {
         id,
         userId: user?._id || user?.id || 'current-user',
         createdAt: new Date().toISOString(),
-        selectedDocuments: normalizedIds,
+        selectedDocuments: selectedDocIds,
         summaryReference: report?.summary || '',
         report,
       };
       writeAnalysisHistory([{ ...entry }, ...history].slice(0, 30));
-      notify(report?.summary || 'Cross-document analysis generated');
+      notify(result?.reused ? 'Reused saved cross-document analysis' : report?.summary || 'Cross-document analysis generated');
       nav(`/app/documents/intelligence/${id}`);
     } catch (error) {
       const message = getErrorMessage(error, 'Unable to analyze documents together.');
