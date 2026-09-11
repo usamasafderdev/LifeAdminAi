@@ -32,7 +32,7 @@ export function mapDocument(document) {
 
 export const documentService = {
   async create(payload) {
-    const { data } = await api.post('/documents', payload);
+    const { data } = await api.post('/documents', payload, { timeout: 120000 });
     return mapDocument(data.document);
   },
   async uploadDocument(formData) {
@@ -51,7 +51,10 @@ export const documentService = {
     return mapDocument(data.document);
   },
   async getFile(id) {
-    const { data } = await api.get(`/documents/${id}/file`, { responseType: 'blob', timeout: 30000 });
+    const { data } = await api.get(`/documents/${id}/file`, {
+      responseType: 'blob',
+      timeout: 30000,
+    });
     return URL.createObjectURL(data);
   },
   async update(id, payload) {
@@ -64,7 +67,11 @@ export const documentService = {
   },
   async analyze(id, { regenerate = false } = {}) {
     const { data } = await api.post(`/documents/${id}/analyze`, { regenerate }, { timeout: 45000 });
-    return data.analysis;
+    return {
+      ...data.analysis,
+      taskGenerationStatus: data.taskGenerationStatus,
+      generatedTaskCount: data.generatedTaskCount,
+    };
   },
   async getAnalysis(id) {
     const { data } = await api.get(`/documents/${id}/analysis`);
@@ -77,5 +84,63 @@ export const documentService = {
   async rejectAnalysis(id) {
     const { data } = await api.post(`/documents/${id}/analysis/reject`);
     return data;
+  },
+  async generateDocument(payload) {
+    const { data } = await api.post('/documents/generate', payload, { timeout: 120000 });
+    return data;
+  },
+  async analyzeTogether(documentIds) {
+    const { data } = await api.post(
+      '/documents/analyze-together',
+      { documentIds },
+      { timeout: 45000 },
+    );
+    return data;
+  },
+  async getAnalysisHistory(id) {
+    const { data } = await api.get(`/documents/intelligence/${id}`);
+    return data.history;
+  },
+  async getSource(id, source) {
+    const { data } = await api.get(`/documents/${id}/chunks/${source.chunkIndex}`, {
+      params: { revision: source.revision },
+    });
+    return data.chunk;
+  },
+  async getChat(id) {
+    const { data } = await api.get(`/documents/${id}/chat`);
+    return data.messages.map((message) => ({ ...message, id: message._id, text: message.content }));
+  },
+  async sendChat(id, message) {
+    const { data } = await api.post(`/documents/${id}/chat`, { message }, { timeout: 45000 });
+    return {
+      userMessage: {
+        ...data.userMessage,
+        id: data.userMessage._id,
+        text: data.userMessage.content,
+      },
+      message: {
+        ...data.message,
+        id: data.message._id,
+        text: data.message.content,
+        memory: data.memory,
+      },
+    };
+  },
+  async clearChat(id) {
+    const { data } = await api.delete(`/documents/${id}/chat`);
+    return data;
+  },
+  async downloadGenerated(id, generatedId, fileName) {
+    const { data } = await api.get(`/documents/${id}/generated/${generatedId}/download`, {
+      responseType: 'blob',
+      timeout: 30000,
+    });
+    const url = URL.createObjectURL(data);
+    const anchor = window.document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName || 'LifeAdmin_Document.docx';
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 };

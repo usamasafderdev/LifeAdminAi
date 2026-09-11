@@ -2,6 +2,7 @@ import { generateText } from './ai/aiService.js';
 import { AiAnalysisValidationError, validateAiAnalysis } from './aiAnalysisValidator.js';
 import { getDocumentChunkingConfig, splitDocumentIntoChunks } from './documentChunkingService.js';
 import { mergeDocumentAnalyses } from './documentAnalysisMergeService.js';
+import { refineAnalysisQuality } from './documentDeadlineService.js';
 
 const MAX_COMPLETION_TOKENS = 1500;
 const CHUNK_COMPLETION_TOKENS = 850;
@@ -26,17 +27,21 @@ Resume or CV experience, skills, education, achievements, employment history, hi
 
 Extract only actions the user genuinely needs to perform. Use concise action-oriented titles such as Complete, Submit, Prepare, Review, Pay, Attend, Create, Upload, or Renew. Do not use vague titles such as "Assignment", "Information", "Document", or "Requirements".
 
-For structured assignments and instruction documents, group related sub-requirements into a reasonable number of meaningful high-level actions. Do not create a separate task for every sentence, formatting rule, checklist item, or numbered step. Put related details in the parent action's description. For example, font, spacing, cover page, table of contents, and referencing rules belong together under preparing and formatting the final document. Preserve distinct deliverables or stages as separate actions, such as completing a theory section, producing a practical deliverable, assembling the submission, and submitting it.
+For structured assignments and instruction documents, identify the meaningful pieces of work the user must complete, not every instruction present. Prefer roughly 3-7 goal-level actions for a typical complex brief, without forcing a count. Always group related sub-requirements and put implementation details in descriptions. Formatting, grammar, student details, references, export requirements, and final checks normally form one finalization task. A report's topic, length, and research requirements normally belong in one writing task. A schedule and its Gantt chart normally belong together. Preserve genuinely distinct deliverables or stages and never turn past experience into future work.
 
-Set priority to high only when urgency, a near deadline, serious consequence, or explicit importance supports it; otherwise use medium or low. Include a dueDate only when the document supports a concrete date. Never guess one.
+Rewrite source wording into concise standalone action titles. Do not copy long instruction sentences into titles. Keep keyInformation short and prioritized: include only useful non-action constraints, and never duplicate requirements already captured adequately in action titles or descriptions.
+
+Extract every explicit supported deadline into importantDates. Use a parseable ISO-style value when possible, retaining an explicit time when present. Also place the relevant date in action.dueDate. When one clear overall submission/payment/meeting deadline governs a connected set of required work, all related actions may inherit it. When multiple unrelated deadlines exist, associate each action only with its matching deadline; never assign dates by mere proximity or guesswork.
+
+Set priority to high only when urgency, a near deadline, serious consequence, or explicit importance supports it; otherwise use medium or low. Include a dueDate only when the document supports a concrete date. Never guess one. Include risks or consequences only when the source explicitly states them.
 
 If the document is genuinely informational and contains no obligation for the user, or if no action can be supported from its context, return actionRequired=false and extractedActions=[].
 
 Return valid JSON only. Do not reveal chain-of-thought or private reasoning.`;
 
 const CHUNK_SYSTEM_PROMPT = `You extract compact evidence from one section of a larger LifeAdmin document.
-Use only this section and never invent facts, actions, or dates. Determine whether the section instructs or obliges the user to act. Past CV experience and descriptive history are not actions. Assignment requirements, deliverables, payments, attendance, applications, renewals, and submission instructions are actions.
-Group related sub-requirements in this section into high-level actions; do not create one task per sentence or formatting rule. Keep the summary brief because multiple section results will be merged. Return valid JSON only.`;
+Use only this section and never invent facts, actions, or dates. Determine meaningful work goals rather than listing instructions. Past CV experience and descriptive history are not actions. Assignment requirements, deliverables, payments, attendance, applications, renewals, and submission instructions are actions.
+Group related sub-requirements into goal-level actions; put details in descriptions. Extract explicit dates and attach relevant dueDate values to actions. Keep key information selective and non-duplicative. Keep the summary brief because multiple section results will be merged. Return valid JSON only.`;
 
 const DOCUMENT_ANALYSIS_SCHEMA = {
   type: 'object',
@@ -61,6 +66,7 @@ const DOCUMENT_ANALYSIS_SCHEMA = {
           title: { type: 'string' },
           description: { type: 'string' },
           priority: { type: 'string' },
+          dueDate: { type: 'string' },
         },
         required: ['title', 'description', 'priority'],
         additionalProperties: false,
@@ -89,9 +95,7 @@ export function parseDocumentAnalysis(text) {
 
 async function analyzeTextSection({ title, category, text, chunkIndex, chunkCount, request }) {
   const isChunk = chunkCount > 1;
-  const result = await request({
-    systemPrompt: isChunk ? CHUNK_SYSTEM_PROMPT : SYSTEM_PROMPT,
-    userPrompt: `${isChunk ? `Analyze section ${chunkIndex + 1} of ${chunkCount} from this document.` : 'Analyze this document using the intent and action-granularity rules.'} Return exactly this JSON structure:
+  const userPrompt = `${isChunk ? `Analyze section ${chunkIndex + 1} of ${chunkCount} from this document.` : 'Analyze this document using the intent and action-granularity rules.'} Return exactly this JSON structure:
 {"actionRequired":false,"summary":"","category":"","importantDates":[],"extractedActions":[],"keyInformation":[],"risksOrConsequences":[]}
 
 The actionRequired value and extractedActions must be consistent. Consolidate related requirements into high-level actions and descriptions.
@@ -100,12 +104,27 @@ Document title: ${String(title || '').trim()}
 Document category: ${String(category || '').trim()}
 
 ${isChunk ? 'Section' : 'Document'} text:
-${text}`,
-    temperature: 0.1,
-    maxTokens: isChunk ? CHUNK_COMPLETION_TOKENS : MAX_COMPLETION_TOKENS,
-    jsonSchema: DOCUMENT_ANALYSIS_SCHEMA,
-  });
-  return { analysis: parseDocumentAnalysis(result.text), model: result.model };
+${text}`;
+
+  let validationError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await request({
+      systemPrompt: isChunk ? CHUNK_SYSTEM_PROMPT : SYSTEM_PROMPT,
+      userPrompt: attempt === 0
+        ? userPrompt
+        : `${userPrompt}\n\nYour previous response was not valid for the required JSON contract. Return one complete JSON object only, with every required top-level field and no prose or markdown fences.`,
+      temperature: attempt === 0 ? 0.1 : 0,
+      maxTokens: isChunk ? CHUNK_COMPLETION_TOKENS : MAX_COMPLETION_TOKENS,
+      jsonSchema: DOCUMENT_ANALYSIS_SCHEMA,
+    });
+    try {
+      return { analysis: parseDocumentAnalysis(result.text), model: result.model };
+    } catch (error) {
+      if (!(error instanceof AiAnalysisValidationError) || attempt === 1) throw error;
+      validationError = error;
+    }
+  }
+  throw validationError;
 }
 
 export async function analyzeDocumentText({ title, category, extractedText }, options = {}) {
@@ -123,7 +142,8 @@ export async function analyzeDocumentText({ title, category, extractedText }, op
     analyses.push(result.analysis);
     model = result.model || model;
   }
-  return { ...(analyses.length === 1 ? analyses[0] : mergeDocumentAnalyses(analyses)), model };
+  const merged = analyses.length === 1 ? analyses[0] : mergeDocumentAnalyses(analyses);
+  return { ...refineAnalysisQuality(merged), model };
 }
 
 export { CHUNK_SYSTEM_PROMPT, DOCUMENT_ANALYSIS_SCHEMA, SYSTEM_PROMPT };

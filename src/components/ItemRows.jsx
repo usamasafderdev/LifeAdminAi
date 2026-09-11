@@ -1,4 +1,16 @@
-import { Calendar, Check, Clock3, ExternalLink, FileImage, FileText, Keyboard, MoreHorizontal, Trash2 } from 'lucide-react';
+import {
+  Calendar,
+  Check,
+  CheckSquare,
+  Clock3,
+  ExternalLink,
+  FileImage,
+  FileText,
+  Keyboard,
+  MoreHorizontal,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Badge, CheckCircle, IconButton, PriorityBadge } from './UI';
@@ -46,18 +58,59 @@ export function TaskRow({ task, onEdit }) {
   );
 }
 
-export function DocumentCard({ doc, view = 'grid', onDelete }) {
+export function DocumentCard({ doc, view = 'grid', onDelete, selected = false, onToggleSelect }) {
   const nav = useNavigate();
-  const SourceIcon = doc.sourceType === 'image' ? FileImage : doc.sourceType === 'manual' || doc.sourceType === 'text' ? Keyboard : FileText;
-  const preview = doc.extractedText?.replace(/\[\[PAGE:\d+\]\]|[#*|]/g, ' ').replace(/\s+/g, ' ').trim();
+  const SourceIcon =
+    doc.sourceType === 'image'
+      ? FileImage
+      : doc.sourceType === 'manual' || doc.sourceType === 'text'
+        ? Keyboard
+        : FileText;
+  const preview = doc.extractedText
+    ?.replace(/\[\[PAGE:\d+\]\]|[#*|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return (
-    <article className={`document-card ${view}`}>
-      <button className={`document-cover cover-${doc.sourceType || 'text'}`} onClick={() => nav(`/app/documents/${doc.id}`)} aria-label={`Open ${doc.title}`}>
+    <article className={`document-card ${view} ${selected ? 'selected-for-analysis' : ''}`}>
+      <div className="document-select-toggle">
+        <button
+          aria-label={
+            selected ? `Remove ${doc.title} from analysis` : `Select ${doc.title} for analysis`
+          }
+          className={selected ? 'selected' : ''}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleSelect?.();
+          }}
+        >
+          {selected ? <CheckSquare size={17} /> : <Square size={17} />}
+        </button>
+      </div>
+      <button
+        className={`document-cover cover-${doc.sourceType || 'text'}`}
+        onClick={() => nav(`/app/documents/${doc.id}`)}
+        aria-label={`Open ${doc.title}`}
+      >
         <span className="cover-type">{doc.type || 'Record'}</span>
         <span className="cover-fold" />
-        <span className="cover-symbol"><SourceIcon /></span>
-        <span className="cover-lines"><i /><i /><i /><i /></span>
-        <strong>{doc.sourceType === 'image' ? 'Image' : doc.sourceType === 'pdf' ? 'PDF' : doc.sourceType === 'manual' ? 'Note' : 'Information'}</strong>
+        <span className="cover-symbol">
+          <SourceIcon />
+        </span>
+        <span className="cover-lines">
+          <i />
+          <i />
+          <i />
+          <i />
+        </span>
+        <strong>
+          {doc.sourceType === 'image'
+            ? 'Image'
+            : doc.sourceType === 'pdf'
+              ? 'PDF'
+              : doc.sourceType === 'manual'
+                ? 'Note'
+                : 'Information'}
+        </strong>
       </button>
       <div className="doc-icon">
         <SourceIcon />
@@ -66,10 +119,30 @@ export function DocumentCard({ doc, view = 'grid', onDelete }) {
       <div className="doc-body">
         <div className="doc-top">
           <Badge tone="neutral">{doc.category}</Badge>
-          {onDelete && <button className="document-delete-action" aria-label={`Delete ${doc.title}`} onClick={() => onDelete(doc)}><Trash2 /></button>}
+          {onDelete && (
+            <button
+              className="document-delete-action"
+              aria-label={`Delete ${doc.title}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(doc);
+              }}
+            >
+              <Trash2 />
+            </button>
+          )}
         </div>
-        <button className="document-open-action" onClick={() => nav(`/app/documents/${doc.id}`)}><h3>{doc.title}</h3></button>
-        {view === 'grid' && <p>{preview || (doc.sourceType === 'image' ? 'No readable text detected in this image.' : 'No extracted text available.')}</p>}
+        <button className="document-open-action" onClick={() => nav(`/app/documents/${doc.id}`)}>
+          <h3>{doc.title}</h3>
+        </button>
+        {view === 'grid' && (
+          <p>
+            {preview ||
+              (doc.sourceType === 'image'
+                ? 'No readable text detected in this image.'
+                : 'No extracted text available.')}
+          </p>
+        )}
         <div className="meta">
           <span>
             <Calendar size={13} />
@@ -91,11 +164,23 @@ export function ReminderRow({ reminder, onSnooze, onDismiss }) {
       <div className="row-main">
         <strong>{reminder.title}</strong>
         <span className="reminder-detail">{reminder.detail}</span>
-        <div className="reminder-datetime"><strong>{reminder.displayDate?.date || reminder.when}</strong>{reminder.displayDate?.time && <><i aria-hidden="true" /><strong>{reminder.displayDate.time}</strong></>}</div>
+        <div className="reminder-datetime">
+          <strong>{reminder.displayDate?.date || reminder.when}</strong>
+          {reminder.displayDate?.time && (
+            <>
+              <i aria-hidden="true" />
+              <strong>{reminder.displayDate.time}</strong>
+            </>
+          )}
+        </div>
       </div>
       <div className="inline-actions">
-        <button className="snooze" onClick={onSnooze}>Snooze</button>
-        <button className="dismiss" onClick={onDismiss}>Dismiss</button>
+        <button className="snooze" onClick={onSnooze}>
+          Snooze
+        </button>
+        <button className="dismiss" onClick={onDismiss}>
+          Dismiss
+        </button>
       </div>
     </div>
   );

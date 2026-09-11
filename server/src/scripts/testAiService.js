@@ -77,20 +77,12 @@ async function run() {
   assert.equal(reasoningRequest.reasoning_effort, 'low');
   assert.equal(reasoningRequest.include_reasoning, false);
 
-  let recoveryAttempts = 0;
-  const recovered = await generateText(
+  let transientAttempts = 0;
+  await assert.rejects(generateText(
     { userPrompt: 'Return JSON', maxTokens: 20, jsonSchema: { type: 'object' } },
-    {
-      config,
-      client: { chat: { completions: { create: async () => {
-        recoveryAttempts += 1;
-        if (recoveryAttempts === 1) throw Object.assign(new Error('temporarily unavailable'), { status: 503 });
-        return { choices: [{ message: { content: '{"recovered":true}' } }] };
-      } } } },
-    },
-  );
-  assert.equal(recoveryAttempts, 2);
-  assert.equal(recovered.text, '{"recovered":true}');
+    { config, client: { chat: { completions: { create: async () => { transientAttempts += 1; throw Object.assign(new Error('temporarily unavailable'), { status: 503 }); } } } } },
+  ), (error) => error.code === 'AI_PROVIDER_UNAVAILABLE');
+  assert.equal(transientAttempts, 1);
 
   await expectAiError('AI_INVALID_RESPONSE', {
     chat: { completions: { create: async () => ({ choices: [] }) } },
@@ -113,7 +105,7 @@ async function run() {
   console.log('Response and error normalization.... PASS');
   console.log('Application-validated JSON mode..... PASS');
   console.log('GPT-OSS reasoning budget controlled. PASS');
-  console.log('Transient generation recovered...... PASS');
+  console.log('Provider attempts stay bounded...... PASS');
 }
 
 run().catch((error) => {

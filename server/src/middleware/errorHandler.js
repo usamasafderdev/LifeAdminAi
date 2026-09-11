@@ -9,9 +9,5 @@ export function errorHandler(err, req, res, next) {
     message: statusCode === 500 ? 'Internal server error' : err.message,
   };
 
-  if (process.env.NODE_ENV === 'development') {
-    response.error = err.message;
-  }
-
   return res.status(statusCode).json(response);
 }

@@ -6,6 +6,33 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const userSchema = new mongoose.Schema(
   {
+    notificationSettings: {
+      enabled: { type: Boolean, default: true },
+      tasks: { type: Boolean, default: true },
+      reminders: { type: Boolean, default: true },
+      goals: { type: Boolean, default: true },
+      schedule: { type: Boolean, default: true },
+      documents: { type: Boolean, default: true },
+      aiSuggestions: { type: Boolean, default: false },
+      timezone: { type: String, default: 'UTC' },
+      version: { type: Number, default: 0 },
+    },
+    notificationJob: {
+      nextCheckAt: { type: Date, default: () => new Date(0) },
+      leaseUntil: { type: Date, default: null },
+      leaseToken: { type: String, default: null },
+    },
+    briefingSettings: {
+      enabled: { type: Boolean, default: true },
+      hidden: { type: Boolean, default: false },
+      version: { type: Number, default: 0 },
+    },
+    memorySettings: {
+      enabled: { type: Boolean, default: true },
+      autoSavePreferences: { type: Boolean, default: false },
+      generation: { type: Number, default: 0 },
+      consentVersion: { type: Number, default: 0 },
+    },
     fullName: {
       type: String,
       required: [true, 'Full name is required'],
@@ -57,6 +84,7 @@ userSchema.methods.comparePassword = function comparePassword(candidatePassword)
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+userSchema.index({ 'notificationSettings.enabled': 1, 'notificationJob.nextCheckAt': 1, 'notificationJob.leaseUntil': 1 });
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
 export default User;

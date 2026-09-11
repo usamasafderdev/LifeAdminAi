@@ -2,8 +2,10 @@ import mongoose from 'mongoose';
 import Task, { TASK_PRIORITIES, TASK_STATUSES } from '../models/Task.js';
 import { applyTaskPriority } from '../services/taskPriorityService.js';
 import { validateTaskInput } from '../services/taskValidator.js';
+import Reminder from '../models/Reminder.js';
+import { clearTaskSchedule } from '../services/calendarTaskLifecycleService.js';
 
-const EDITABLE_FIELDS = ['title', 'description', 'status', 'priority', 'priorityOverride', 'dueDate'];
+const EDITABLE_FIELDS = ['title', 'description', 'status', 'priority', 'priorityOverride', 'dueDate', 'estimatedDuration'];
 const FORBIDDEN_FIELDS = ['userId', 'documentId', 'source', 'confirmedPriority', 'calculatedPriority', 'priorityScore', 'priorityReasons', 'priorityCalculatedAt', '_id', 'createdAt', 'updatedAt'];
 const invalid = (message) => ({ success: false, message });
 const validId = (id) => mongoose.isObjectIdOrHexString(id);
@@ -84,10 +86,14 @@ export async function updateTask(req, res, next) {
     const priorityOverride = readOverride(body, legacyOverride);
     delete values.priority;
     const prepared = applyTaskPriority({ ...task.toObject(), ...values, priorityOverride });
-    for (const field of ['title', 'description', 'status', 'dueDate', 'priority', 'calculatedPriority', 'priorityScore', 'priorityReasons', 'priorityOverride', 'priorityCalculatedAt']) {
+    for (const field of ['title', 'description', 'status', 'dueDate', 'estimatedDuration', 'priority', 'calculatedPriority', 'priorityScore', 'priorityReasons', 'priorityOverride', 'priorityCalculatedAt']) {
       if (Object.hasOwn(prepared, field)) task[field] = prepared[field];
     }
     await task.save();
+    if (['completed', 'cancelled'].includes(task.status)) await clearTaskSchedule(req.user._id, [task._id]);
+    if (task.status === 'completed') {
+      await Reminder.updateMany({ userId: req.user._id, taskId: task._id, status: 'active' }, { $set: { status: 'completed' } });
+    }
     return res.status(200).json({ success: true, message: priorityOverride ? 'Task updated successfully' : 'Task updated using automatic priority', task });
   } catch (error) { return next(error); }
 }
@@ -95,8 +101,11 @@ export async function updateTask(req, res, next) {
 export async function deleteTask(req, res, next) {
   try {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid task ID'));
-    const task = await Task.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+    const task = await Task.findOne({ _id: req.params.id, userId: req.user._id });
     if (!task) return res.status(404).json(invalid('Task not found'));
-    return res.status(200).json({ success: true, message: 'Task deleted successfully' });
+    const reminderResult = await Reminder.deleteMany({ userId: req.user._id, taskId: task._id });
+    await Task.deleteOne({ _id: task._id, userId: req.user._id });
+    await clearTaskSchedule(req.user._id, [task._id], { deleted: true });
+    return res.status(200).json({ success: true, message: 'Task deleted successfully', deletedReminders: reminderResult.deletedCount || 0 });
   } catch (error) { return next(error); }
 }

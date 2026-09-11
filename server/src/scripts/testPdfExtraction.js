@@ -1,3 +1,4 @@
+import DocumentChunk from '../models/DocumentChunk.js';
 import 'dotenv/config';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -107,7 +108,7 @@ async function run() {
     const noText = await upload(emptyPdf, userA.token, { title: 'Scanned PDF wrapper' });
     const noTextDocument = await Document.findById(noText.body.document?._id);
     check(noText.status === 201 && noTextDocument?.extractedText === '', 'Valid no-text PDF saved empty');
-    check(/no extractable text/i.test(noText.body.message), 'No-text PDF response is explicit');
+    check(/no (?:extractable|readable) text/i.test(noText.body.message), 'No-text PDF response is explicit');
 
     let textLimitError;
     try { validateExtractedTextLength('x'.repeat(MAX_EXTRACTED_TEXT_LENGTH + 1)); } catch (error) { textLimitError = error; }
@@ -130,7 +131,7 @@ async function run() {
         const file = resolveStoredFile(document.filePath);
         return file ? fs.rm(file, { force: true }) : null;
       }));
-      if (userIds.length) await Document.deleteMany({ userId: { $in: userIds } });
+      if (userIds.length) await Promise.all([Document.deleteMany({ userId: { $in: userIds } }), DocumentChunk.deleteMany({ userId: { $in: userIds } })]);
       await User.deleteMany({ email: { $in: EMAILS } });
       await mongoose.connection.close();
     }

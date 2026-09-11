@@ -11,7 +11,7 @@ function normalizeProviderError(error) {
     return new AiError(AI_ERROR_CODES.AUTHENTICATION_FAILED, { statusCode: 502, cause: error });
   }
   if (status === 429) {
-    return new AiError(AI_ERROR_CODES.RATE_LIMITED, { statusCode: 503, cause: error });
+    return new AiError(AI_ERROR_CODES.RATE_LIMITED, { statusCode: 429, cause: error });
   }
   if (errorName === 'APIConnectionTimeoutError' || error?.code === 'ETIMEDOUT') {
     return new AiError(AI_ERROR_CODES.TIMEOUT, { statusCode: 504, cause: error });
@@ -55,28 +55,9 @@ export async function generateWithGroq({
   try {
     // LifeAdmin parses and validates the JSON response itself. Avoiding a
     // provider response-format constraint prevents model-specific 400s.
-    let response;
-    let text = '';
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        response = await client.chat.completions.create(request);
-        text = response?.choices?.[0]?.message?.content?.trim() || '';
-        if (!text) throw new AiError(AI_ERROR_CODES.INVALID_RESPONSE);
-        break;
-      } catch (error) {
-        const transient = error?.status === 429 || error?.status >= 500
-          || error?.name === 'APIConnectionError' || error?.name === 'APIConnectionTimeoutError'
-          || error?.code === 'ETIMEDOUT';
-        if (attempt === 0 && transient) {
-          const retryHeader = error?.headers?.get?.('retry-after') ?? error?.headers?.['retry-after'];
-          const retrySeconds = Number.parseFloat(retryHeader);
-          const delayMs = Number.isFinite(retrySeconds) ? Math.min(10000, Math.max(0, retrySeconds * 1000)) : 500;
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          continue;
-        }
-        throw error;
-      }
-    }
+    const response = await client.chat.completions.create(request);
+    const text = response?.choices?.[0]?.message?.content?.trim() || '';
+    if (!text) throw new AiError(AI_ERROR_CODES.INVALID_RESPONSE, { statusCode: 502 });
 
     const usage = response.usage
       ? {

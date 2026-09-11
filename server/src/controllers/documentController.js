@@ -1,3 +1,4 @@
+import { ensureDocumentKnowledge } from '../services/documentKnowledgeService.js';
 import mongoose from 'mongoose';
 import Document, { DOCUMENT_CATEGORIES } from '../models/Document.js';
 import { storedFilePath } from '../config/upload.js';
@@ -5,17 +6,27 @@ import { deleteFileIfExists, resolveStoredFile } from '../utils/fileUtils.js';
 import { extractPdfText } from '../services/pdfExtractionService.js';
 import { extractTextFromImage } from '../services/ocrService.js';
 import { analyzeDocumentText } from '../services/documentAiService.js';
-import { AiError } from '../services/ai/aiService.js';
 import { validateConfirmedAnalysis } from '../services/aiAnalysisValidator.js';
 import Task from '../models/Task.js';
 import { generateTasksFromAnalysis } from '../services/taskGenerationService.js';
 import { deleteDocumentAndLinkedTasks } from '../services/documentDeletionService.js';
+import { processSavedDocument } from '../services/documentAutomationService.js';
+import { generateMultiDocumentAnalysis } from '../services/multiDocumentAnalysisService.js';
+import DocumentAnalysisHistory from '../models/DocumentAnalysisHistory.js';
+import { generatePromptDocument } from '../services/documentGenerationService.js';
 
 const JSON_SOURCE_TYPES = ['text', 'manual'];
 const MAX_TITLE_LENGTH = 200;
-const MAX_TEXT_LENGTH = 200000;
+const MAX_TEXT_LENGTH = 2000000;
 const EDITABLE_FIELDS = ['title', 'sourceType', 'category', 'extractedText'];
-const FORBIDDEN_UPDATE_FIELDS = ['userId', '_id', 'createdAt', 'originalFilename', 'mimeType', 'filePath'];
+const FORBIDDEN_UPDATE_FIELDS = [
+  'userId',
+  '_id',
+  'createdAt',
+  'originalFilename',
+  'mimeType',
+  'filePath',
+];
 let documentAnalyzer = analyzeDocumentText;
 
 function invalid(message) {
@@ -28,7 +39,8 @@ function validateFields(input, { partial = false } = {}) {
 
   if (!partial || Object.hasOwn(body, 'title')) {
     if (typeof body.title !== 'string' || !body.title.trim()) return { error: 'Title is required' };
-    if (body.title.trim().length > MAX_TITLE_LENGTH) return { error: `Title cannot exceed ${MAX_TITLE_LENGTH} characters` };
+    if (body.title.trim().length > MAX_TITLE_LENGTH)
+      return { error: `Title cannot exceed ${MAX_TITLE_LENGTH} characters` };
     values.title = body.title.trim();
   }
 
@@ -50,7 +62,8 @@ function validateFields(input, { partial = false } = {}) {
 
   if (Object.hasOwn(body, 'extractedText')) {
     if (typeof body.extractedText !== 'string') return { error: 'Extracted text must be a string' };
-    if (body.extractedText.length > MAX_TEXT_LENGTH) return { error: `Extracted text cannot exceed ${MAX_TEXT_LENGTH} characters` };
+    if (body.extractedText.length > MAX_TEXT_LENGTH)
+      return { error: `Extracted text cannot exceed ${MAX_TEXT_LENGTH} characters` };
     values.extractedText = body.extractedText;
   } else if (!partial) {
     values.extractedText = '';
@@ -72,11 +85,28 @@ export async function createDocument(req, res, next) {
       ...validation.values,
       userId: req.user._id,
     });
+    const knowledgeReady = await ensureDocumentKnowledge(document._id, req.user._id)
+      .then(() => true)
+      .catch(() => false);
+    const automation = await processSavedDocument(document, req.user._id, {
+      analyze: documentAnalyzer,
+    });
 
     return res.status(201).json({
       success: true,
-      message: 'Document created successfully',
+      message: !knowledgeReady
+        ? 'Document saved. Search indexing will retry when you ask a question.'
+        : automation.failureStage === 'task_generation'
+          ? 'Document analyzed, but automatic task generation could not be completed.'
+          : automation.error
+            ? 'Document saved successfully. Automatic AI analysis is temporarily unavailable.'
+            : automation.created
+              ? `${automation.created} task${automation.created === 1 ? '' : 's'} created automatically`
+              : document.extractedText?.trim()
+                ? 'Document analyzed; no actionable tasks were created'
+                : 'No readable text available for automatic analysis.',
       document,
+      taskGeneration: { created: automation.created, skipped: automation.skipped },
     });
   } catch (error) {
     return next(error);
@@ -97,12 +127,17 @@ export async function uploadDocument(req, res, next) {
     const title = suppliedTitle ?? fallbackTitle;
     if (!title || title.length > MAX_TITLE_LENGTH) {
       await deleteFileIfExists(filePath);
-      return res.status(400).json(invalid(title ? `Title cannot exceed ${MAX_TITLE_LENGTH} characters` : 'Title is required'));
+      return res
+        .status(400)
+        .json(
+          invalid(
+            title ? `Title cannot exceed ${MAX_TITLE_LENGTH} characters` : 'Title is required',
+          ),
+        );
     }
 
-    const category = typeof req.body?.category === 'string' && req.body.category
-      ? req.body.category
-      : 'other';
+    const category =
+      typeof req.body?.category === 'string' && req.body.category ? req.body.category : 'other';
     if (!DOCUMENT_CATEGORIES.includes(category)) {
       await deleteFileIfExists(filePath);
       return res.status(400).json(invalid('Invalid document category'));
@@ -129,15 +164,28 @@ export async function uploadDocument(req, res, next) {
       filePath,
       extractedText,
     });
+    const knowledgeReady = await ensureDocumentKnowledge(document._id, req.user._id)
+      .then(() => true)
+      .catch(() => false);
+    const automation = await processSavedDocument(document, req.user._id, {
+      analyze: documentAnalyzer,
+    });
 
     return res.status(201).json({
       success: true,
-      message: !extractedText
-        ? sourceType === 'pdf'
-          ? 'PDF uploaded, but no extractable text was found'
-          : 'Image uploaded, but no readable text was detected'
-        : sourceType === 'image' ? 'Image processed successfully' : 'Document uploaded successfully',
+      message: !knowledgeReady
+        ? 'Document saved. Search indexing will retry when you ask a question.'
+        : automation.failureStage === 'task_generation'
+          ? 'Document analyzed, but automatic task generation could not be completed.'
+          : automation.error
+            ? 'Document saved successfully. Automatic AI analysis is temporarily unavailable.'
+            : automation.created
+              ? `${automation.created} task${automation.created === 1 ? '' : 's'} created automatically`
+              : !extractedText
+                ? 'No readable text available for automatic analysis.'
+                : 'No actionable tasks were detected in this document.',
       document,
+      taskGeneration: { created: automation.created, skipped: automation.skipped },
     });
   } catch (error) {
     if (filePath) {
@@ -193,21 +241,30 @@ export async function getDocumentFile(req, res, next) {
 export async function updateDocument(req, res, next) {
   try {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
-    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const body =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     if (FORBIDDEN_UPDATE_FIELDS.some((field) => Object.hasOwn(body, field))) {
-      return res.status(400).json(invalid('Document ownership and file metadata cannot be changed'));
+      return res
+        .status(400)
+        .json(invalid('Document ownership and file metadata cannot be changed'));
     }
     const submittedFields = EDITABLE_FIELDS.filter((field) => Object.hasOwn(body, field));
-    if (!submittedFields.length) return res.status(400).json(invalid('No editable document fields provided'));
+    if (!submittedFields.length)
+      return res.status(400).json(invalid('No editable document fields provided'));
 
     const validation = validateFields(body, { partial: true });
     if (validation.error) return res.status(400).json(invalid(validation.error));
 
     const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
     if (!document) return res.status(404).json(invalid('Document not found'));
+    if (Object.hasOwn(validation.values, 'extractedText')) document.knowledgePending = true;
     Object.assign(document, validation.values);
     await document.save();
-    return res.status(200).json({ success: true, message: 'Document updated successfully', document });
+    if (Object.hasOwn(validation.values, 'extractedText'))
+      await ensureDocumentKnowledge(document._id, req.user._id).catch(() => null);
+    return res
+      .status(200)
+      .json({ success: true, message: 'Document updated successfully', document });
   } catch (error) {
     return next(error);
   }
@@ -219,7 +276,13 @@ export async function deleteDocument(req, res, next) {
     const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
     if (!document) return res.status(404).json(invalid('Document not found'));
     const result = await deleteDocumentAndLinkedTasks({ document, userId: req.user._id });
-    return res.status(200).json({ success: true, message: 'Document and linked tasks deleted successfully', ...result });
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message: 'Document and linked tasks deleted successfully',
+        ...result,
+      });
   } catch (error) {
     return next(error);
   }
@@ -249,7 +312,6 @@ export async function analyzeDocument(req, res, next) {
     }
 
     const previousAnalysis = document.aiAnalysis?.toObject?.() || document.aiAnalysis || null;
-    const previousCompletedAnalysis = previousAnalysis?.status === 'completed' ? previousAnalysis : null;
     document.aiAnalysis = {
       ...(previousAnalysis || {}),
       status: 'processing',
@@ -258,40 +320,25 @@ export async function analyzeDocument(req, res, next) {
     await document.save();
 
     try {
-      const result = await documentAnalyzer({
-        title: document.title,
-        category: document.category,
-        extractedText: document.extractedText,
+      const automation = await processSavedDocument(document, req.user._id, {
+        analyze: documentAnalyzer,
       });
-      document.aiAnalysis = {
-        status: 'completed',
-        ...result,
-        analyzedAt: new Date(),
-        errorMessage: '',
-        reviewStatus: 'pending_review',
-        reviewedAt: null,
-        confirmedAnalysis: undefined,
-        confirmedBy: null,
-      };
-      await document.save();
+      if (automation.error && automation.failureStage === 'analysis') throw automation.error;
       return res.status(200).json({
         success: true,
-        message: 'Document analyzed successfully',
+        message:
+          automation.failureStage === 'task_generation'
+            ? 'Document analyzed, but automatic task generation could not be completed.'
+            : automation.created
+              ? `${automation.created} task${automation.created === 1 ? '' : 's'} created automatically`
+              : 'Document analyzed successfully',
         analysis: document.aiAnalysis,
+        taskGeneration: { created: automation.created, skipped: automation.skipped },
+        taskGenerationStatus: document.taskGenerationStatus,
+        generatedTaskCount: document.generatedTaskCount,
         cached: false,
       });
     } catch (error) {
-      if (previousCompletedAnalysis) {
-        document.aiAnalysis = previousCompletedAnalysis;
-      } else {
-        document.aiAnalysis.status = 'failed';
-        document.aiAnalysis.errorMessage = error.code === 'AI_RESPONSE_VALIDATION_FAILED'
-          ? 'AI response validation failed.'
-          : error instanceof AiError && error.code === 'AI_NOT_CONFIGURED'
-            ? 'AI analysis is not configured.'
-            : 'Document analysis could not be completed.';
-      }
-      await document.save();
       throw error;
     }
   } catch (error) {
@@ -306,7 +353,9 @@ export function setDocumentAnalyzerForTests(analyzer) {
 export async function getDocumentAnalysis(req, res, next) {
   try {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
-    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id }).select('aiAnalysis');
+    const document = await Document.findOne({ _id: req.params.id, userId: req.user._id }).select(
+      'aiAnalysis',
+    );
     if (!document) return res.status(404).json(invalid('Document not found'));
     const analysis = document.aiAnalysis || null;
     return res.status(200).json({
@@ -372,29 +421,116 @@ export async function rejectDocumentAnalysis(req, res, next) {
   }
 }
 
+export async function getDocumentIntelligenceHistory(req, res, next) {
+  try {
+    if (!validId(req.params.id))
+      return res.status(400).json(invalid('Invalid analysis history ID'));
+    const history = await DocumentAnalysisHistory.findOne({
+      _id: req.params.id,
+      userId: req.user._id,
+    }).lean();
+    if (!history) return res.status(404).json(invalid('Analysis history not found'));
+    return res.status(200).json({ success: true, history });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function analyzeTogether(req, res, next) {
+  try {
+    const rawIds = Array.isArray(req.body?.documentIds) ? req.body.documentIds : [];
+    if (!rawIds.length) return res.status(400).json(invalid('Select at least two documents.'));
+    const ids = [...new Set(rawIds.map(String))];
+    if (ids.length < 2) return res.status(400).json(invalid('Select at least two documents.'));
+    const report = await generateMultiDocumentAnalysis({ userId: req.user._id, documentIds: ids });
+    const saved = await DocumentAnalysisHistory.create({
+      userId: req.user._id,
+      selectedDocuments: ids.map((value) => new mongoose.Types.ObjectId(value)),
+      createdAt: new Date(),
+      summaryReference: report.summary || 'Document intelligence analysis',
+      report,
+    });
+    return res.status(200).json({ success: true, report, history: { id: saved._id } });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function generateDocument(req, res, next) {
+  try {
+    const body =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    const documentType =
+      typeof body.documentType === 'string' ? body.documentType.trim() : 'report';
+    const format = typeof body.format === 'string' ? body.format.toLowerCase() : 'docx';
+    if (!prompt) return res.status(400).json(invalid('Prompt is required'));
+    if (prompt.length > 4000)
+      return res.status(400).json(invalid('Prompt cannot exceed 4000 characters'));
+    if (!['docx', 'pdf', 'markdown'].includes(format))
+      return res
+        .status(400)
+        .json(invalid('Unsupported document format. Choose docx, pdf, or markdown.'));
+    const result = await generatePromptDocument({
+      userId: req.user._id,
+      prompt,
+      documentType,
+      format,
+    });
+    return res.status(201).json({
+      success: true,
+      message: 'Document created successfully',
+      documentId: result.generatedDocument._id,
+      downloadUrl: `/api/documents/generated/${result.generatedDocument._id}/download`,
+      format: result.generatedDocument.format,
+      fileName: result.generatedDocument.fileName,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 export async function createTasksFromAnalysis(req, res, next) {
   try {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
     const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
     if (!document) return res.status(404).json(invalid('Document not found'));
-    if (document.aiAnalysis?.reviewStatus !== 'confirmed' || !document.aiAnalysis.confirmedAnalysis) {
+    if (
+      document.aiAnalysis?.reviewStatus !== 'confirmed' ||
+      !document.aiAnalysis.confirmedAnalysis
+    ) {
       return res.status(400).json(invalid('Document has no confirmed analysis'));
     }
 
     const allowedFields = ['actionIndexes'];
-    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    if (Object.keys(body).some((field) => !allowedFields.includes(field))) return res.status(400).json(invalid('Only confirmed task selections are accepted'));
-    const { tasks: candidates, skippedDuplicates } = await generateTasksFromAnalysis(document, req.user._id, { actionIndexes: body.actionIndexes });
+    const body =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (Object.keys(body).some((field) => !allowedFields.includes(field)))
+      return res.status(400).json(invalid('Only confirmed task selections are accepted'));
+    const { tasks: candidates, skippedDuplicates } = await generateTasksFromAnalysis(
+      document,
+      req.user._id,
+      { actionIndexes: body.actionIndexes },
+    );
     const tasks = candidates.length ? await Task.insertMany(candidates) : [];
-    const confirmedActionCount = document.aiAnalysis.confirmedAnalysis.extractedActions?.length || 0;
+    const confirmedActionCount =
+      document.aiAnalysis.confirmedAnalysis.extractedActions?.length || 0;
     return res.status(201).json({
       success: true,
-      message: tasks.length ? `${tasks.length} task${tasks.length === 1 ? '' : 's'} created` : confirmedActionCount === 0 ? 'No confirmed actionable tasks found' : skippedDuplicates ? 'Selected tasks already exist' : 'No tasks selected',
+      message: tasks.length
+        ? `${tasks.length} task${tasks.length === 1 ? '' : 's'} created`
+        : confirmedActionCount === 0
+          ? 'No confirmed actionable tasks found'
+          : skippedDuplicates
+            ? 'Selected tasks already exist'
+            : 'No tasks selected',
       tasks,
       created: tasks.length,
       skipped: skippedDuplicates,
       createdCount: tasks.length,
       skippedCount: skippedDuplicates,
     });
-  } catch (error) { return next(error); }
+  } catch (error) {
+    return next(error);
+  }
 }

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import app from './app.js';
 import { connectDB } from './config/db.js';
+import { startNotificationScheduler, stopNotificationScheduler } from './services/notificationSchedulerService.js';
 
 const port = Number(process.env.PORT) || 5000;
 let httpServer;
@@ -10,6 +11,7 @@ let shuttingDown = false;
 async function startServer() {
   try {
     await connectDB();
+    await startNotificationScheduler();
     httpServer = app.listen(port, () => {
       console.log(`LifeAdmin API running on port ${port}`);
     });
@@ -23,6 +25,7 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`${signal} received. Shutting down...`);
+  await stopNotificationScheduler();
 
   if (httpServer) {
     await new Promise((resolve) => httpServer.close(resolve));

@@ -1,3 +1,4 @@
+import DocumentChunk from '../models/DocumentChunk.js';
 import 'dotenv/config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -21,7 +22,7 @@ async function run() {
     await connectDB();
     const oldUsers = await User.find({ email: { $in: EMAILS } }).select('_id');
     const oldIds = oldUsers.map((user) => user._id);
-    if (oldIds.length) await Promise.all([Task.deleteMany({ userId: { $in: oldIds } }), Document.deleteMany({ userId: { $in: oldIds } })]);
+    if (oldIds.length) await Promise.all([Task.deleteMany({ userId: { $in: oldIds } }), Promise.all([Document.deleteMany({ userId: { $in: oldIds } }), DocumentChunk.deleteMany({ userId: { $in: oldIds } })])]);
     await User.deleteMany({ email: { $in: EMAILS } });
     server = app.listen(0);
     await new Promise((resolve) => server.once('listening', resolve));
@@ -72,7 +73,7 @@ async function run() {
     if (server) await new Promise((resolve) => server.close(resolve));
     if (fixturePath) await fs.rm(fixturePath, { force: true });
     if (mongoose.connection.readyState) {
-      if (userIds.length) await Promise.all([Task.deleteMany({ userId: { $in: userIds } }), Document.deleteMany({ userId: { $in: userIds } })]);
+      if (userIds.length) await Promise.all([Task.deleteMany({ userId: { $in: userIds } }), Promise.all([Document.deleteMany({ userId: { $in: userIds } }), DocumentChunk.deleteMany({ userId: { $in: userIds } })])]);
       await User.deleteMany({ email: { $in: EMAILS } });
       await mongoose.connection.close();
     }

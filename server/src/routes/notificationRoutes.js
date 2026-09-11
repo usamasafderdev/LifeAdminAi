@@ -1,0 +1,12 @@
+import express from 'express';
+import { protect } from '../middleware/authMiddleware.js';
+import * as controller from '../controllers/notificationController.js';
+const router = express.Router();
+router.use(protect);
+router.get('/', controller.list);
+router.route('/settings').get(controller.settings).patch(controller.updateSettings);
+router.patch('/read-all', controller.readAll);
+router.patch('/:id/read', controller.read);
+router.get('/:id/resource', controller.resource);
+router.delete('/:id', controller.remove);
+export default router;

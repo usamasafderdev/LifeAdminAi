@@ -24,10 +24,10 @@ function selectedActions(actions, actionIndexes) {
   return [...new Set(actionIndexes)].map((index) => actions[index]);
 }
 
-export async function generateTasksFromAnalysis(document, userId, { actionIndexes, now = new Date() } = {}) {
-  const confirmed = document?.aiAnalysis?.confirmedAnalysis;
-  const actions = confirmed?.extractedActions;
-  if (document?.aiAnalysis?.reviewStatus !== 'confirmed' || !confirmed || !Array.isArray(actions)) {
+export async function generateTasksFromAnalysis(document, userId, { actionIndexes, now = new Date(), analysis, source = 'ai_confirmed' } = {}) {
+  const selectedAnalysis = analysis || document?.aiAnalysis?.confirmedAnalysis;
+  const actions = selectedAnalysis?.extractedActions;
+  if (!selectedAnalysis || !Array.isArray(actions)) {
     const error = new Error('Document has no confirmed analysis');
     error.statusCode = 400;
     error.code = 'NO_CONFIRMED_ANALYSIS';
@@ -58,7 +58,7 @@ export async function generateTasksFromAnalysis(document, userId, { actionIndexe
     });
     const confirmedPriority = values.priority;
     delete values.priority;
-    tasks.push(applyTaskPriority({ ...values, confirmedPriority, priorityOverride: null, userId, documentId: document._id, source: 'ai_confirmed' }, { now }));
+    tasks.push(applyTaskPriority({ ...values, confirmedPriority, priorityOverride: null, userId, documentId: document._id, source }, { now }));
     knownTitles.add(duplicateKey);
   }
 

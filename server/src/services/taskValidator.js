@@ -30,6 +30,10 @@ function parseDueDate(value) {
 export function validateTaskInput(input, { partial = false } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TaskValidationError('Task data is required');
   const values = {};
+  if (Object.hasOwn(input, 'estimatedDuration')) {
+    if (input.estimatedDuration !== null && (!Number.isInteger(input.estimatedDuration) || input.estimatedDuration < 1 || input.estimatedDuration > 2400)) throw new TaskValidationError('Estimated duration must be 1–2400 whole minutes or null');
+    values.estimatedDuration = input.estimatedDuration;
+  }
   if (!partial || Object.hasOwn(input, 'title')) values.title = cleanString(input.title, 'title', 200, { required: true });
   if (!partial || Object.hasOwn(input, 'description')) values.description = cleanString(input.description ?? '', 'description', 2000) ?? '';
   if (!partial || Object.hasOwn(input, 'priority')) {

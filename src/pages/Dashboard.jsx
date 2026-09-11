@@ -1,232 +1,61 @@
-import {
-  ArrowRight,
-  CalendarDays,
-  Check,
-  Clock3,
-  FileImage,
-  FileText,
-  Lightbulb,
-  ListChecks,
-  Plus,
-  Upload,
-} from 'lucide-react';
+import { ImportantAlerts } from '../components/NotificationCenter';
+import DailyBriefingCard from '../components/DailyBriefingCard';
+import { ArrowRight, BellRing, CalendarDays, Clock3, FileText, Lightbulb, ListChecks, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Button, CheckCircle, EmptyState, PageHeader, PriorityBadge, Skeleton } from '../components/UI';
 import { useApp } from '../context/AppContext';
-import { Button, PageHeader, PriorityBadge, CheckCircle } from '../components/UI';
-import { daysUntil, isOverdue } from '../utils/dates';
 import { useAuth } from '../context/AuthContext';
+import { getErrorMessage } from '../services/api';
+import { integrationService } from '../services/integrationService';
+import { TODAY, dueLabel } from '../utils/dates';
+
+const empty = { counts: { documents: 0, openTasks: 0, highPriority: 0, upcomingDeadlines: 0, upcomingReminders: 0 }, deadlineSummary: { insight: 'No deadlines fall within the next 14 days.' }, taskProgress: { total: 0, completed: 0, pending: 0, overdue: 0 }, todaysFocus: [], upcomingReminders: [], recentDocuments: [] };
 
 export default function Dashboard() {
   const nav = useNavigate();
-  const { documents, tasks, completeTask } = useApp();
+  const { updateTask, reloadReminders } = useApp();
   const { user } = useAuth();
+  const [data, setData] = useState(empty);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const load = async () => { setLoading(true); setError(''); try { setData(await integrationService.dashboard(TODAY)); } catch (e) { setError(getErrorMessage(e, 'Unable to load your dashboard.')); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, []);
+  const complete = async (id) => { await updateTask(id, { status: 'Completed' }); await reloadReminders(); await load(); };
   const firstName = user?.fullName?.trim().split(/\s+/)[0] || 'there';
-  const effective = (t) => t.userPriority || t.systemPriority || t.priority;
-  const urgent = tasks.filter((t) => effective(t) === 'URGENT' && t.status !== 'Completed');
-  const open = tasks.filter((t) => t.status !== 'Completed');
-  const completed = tasks.filter((t) => t.status === 'Completed');
-  const overdue = open.filter((t) => isOverdue(t.date));
-  const upcoming = open.filter((t) => { const d = daysUntil(t.date); return d !== null && d >= 0 && d <= 14; });
-  const percent = tasks.length ? Math.round(completed.length / tasks.length * 100) : 0;
-  return (
-    <>
-      <PageHeader
-        title={`Good morning, ${firstName}`}
-        description={urgent.length ? `${urgent.length} item${urgent.length === 1 ? '' : 's'} need your attention now.` : 'Nothing urgent needs your attention.'}
-        action={
-          <Button onClick={() => nav('/app/add')}>
-            <Plus size={16} />
-            Add Information
-          </Button>
-        }
-      />
+  return <>
+    <PageHeader title={`Good morning, ${firstName}`} description="Your real tasks, reminders, and documents in one place." action={<Button onClick={() => nav('/app/add')}><Plus size={16} />Add Information</Button>} />
+    <ImportantAlerts />
+    <DailyBriefingCard key={user?._id || user?.id} />
+    {loading ? <section className="panel"><Skeleton lines={8} /></section> : error ? <EmptyState title="Dashboard could not be loaded" text={error} action={<Button onClick={load}>Try again</Button>} /> : <>
       <section className="metrics">
-        <div>
-          <span className="metric-icon urgent">
-            <Clock3 />
-          </span>
-          <p>Urgent</p>
-          <strong>{urgent.length}</strong>
-          <small>Need action now</small>
-        </div>
-        <div>
-          <span className="metric-icon blue">
-            <CalendarDays />
-          </span>
-          <p>Upcoming</p>
-          <strong>{upcoming.length}</strong>
-          <small>Next 14 days</small>
-        </div>
-        <div>
-          <span className="metric-icon green">
-            <FileText />
-          </span>
-          <p>Documents</p>
-          <strong>{documents.length}</strong>
-          <small>Saved records</small>
-        </div>
-        <div>
-          <span className="metric-icon amber">
-            <ListChecks />
-          </span>
-          <p>Open Tasks</p>
-          <strong>{open.length}</strong>
-          <small>Still pending</small>
-        </div>
+        <Metric icon={FileText} tone="green" label="Documents" value={data.counts.documents} note="Saved records" />
+        <Metric icon={ListChecks} tone="blue" label="Open Tasks" value={data.counts.openTasks} note="Pending or in progress" />
+        <Metric icon={Clock3} tone="urgent" label="High Priority" value={data.counts.highPriority} note="Open tasks" />
+        <Metric icon={CalendarDays} tone="amber" label="Upcoming" value={data.counts.upcomingDeadlines} note="Deadlines in next 14 days" />
       </section>
-      <div className="dashboard-grid">
-        <section className="panel attention">
-          <div className="section-head">
-            <div>
-              <h2>Needs your attention</h2>
-              <p>Your highest-priority open items</p>
-            </div>
-            <button onClick={() => nav('/app/tasks')}>
-              View all <ArrowRight size={14} />
-            </button>
-          </div>
-          {tasks
-            .filter((t) => t.status !== 'Completed')
-            .slice(0, 4)
-            .map((t) => (
-              <div className="attention-row" key={t.id}>
-                <CheckCircle onClick={() => completeTask(t.id)} />
-                <div>
-                  <strong>{t.title}</strong>
-                  <span>
-                    {t.category} · Due {t.due.toLowerCase()}
-                  </span>
-                </div>
-                <PriorityBadge priority={t.priority} />
-                <button onClick={() => nav(`/app/documents/${t.source}`)}>
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            ))}
+      <div className="dashboard-grid dashboard-live-grid">
+        <section className="panel attention"><SectionHead title="Today's Focus" subtitle="Tasks and reminders needing attention now" action={() => nav('/app/tasks')} label="View tasks" />
+          {data.todaysFocus.length ? data.todaysFocus.map((item) => item.type === 'reminder' ? <ReminderFocusItem reminder={item} nav={nav} key={`reminder-${item.id}`} /> : <TaskFocusItem task={item} complete={complete} nav={nav} key={`task-${item.id}`} />) : <InlineEmpty icon={ListChecks} text="Nothing needs your attention right now." />}
         </section>
-        <section className="panel progress-panel">
-          <div className="section-head">
-            <div>
-              <h2>Task progress</h2>
-              <p>August overview</p>
-            </div>
-          </div>
-          <div className="progress-visual modern-progress">
-            <div className="progress-number">
-              <strong>{percent}%</strong>
-              <span>of August tasks complete</span>
-            </div>
-            <div className="legend">
-              <p>
-                <i className="green-dot" />
-                Completed <b>{completed.length}</b>
-              </p>
-              <p>
-                <i className="blue-dot" />
-                Pending <b>{open.length}</b>
-              </p>
-              <p>
-                <i className="red-dot" />
-                Overdue <b>{overdue.length}</b>
-              </p>
-            </div>
-          </div>
-          <div className="segmented-progress">
-            <i className="complete" style={{ width: `${percent}%` }} />
-            <i className="pending" style={{ width: `${100 - percent}%` }} />
-          </div>
-          <div className="ai-insight">
-            <span>
-              <Lightbulb />
-            </span>
-            <div>
-              <small>LIFEADMIN INSIGHT</small>
-              <p>{upcoming.length ? `${upcoming.length} deadline${upcoming.length === 1 ? '' : 's'} fall within the next 14 days.` : 'No deadlines fall within the next 14 days.'}</p>
-            </div>
-            <button onClick={() => nav('/app/tasks')}>
-              Review priorities <ArrowRight />
-            </button>
-          </div>
-        </section>
-        <section className="panel">
-          <div className="section-head">
-            <div>
-              <h2>Upcoming</h2>
-              <p>Your next important dates</p>
-            </div>
-            <button onClick={() => nav('/app/calendar')}>
-              Calendar <ArrowRight size={14} />
-            </button>
-          </div>
-          <div className="timeline">
-            {open.filter(t => t.date).sort((a,b) => a.date.localeCompare(b.date)).slice(0,4).map((t) => { const d = new Date(`${t.date}T12:00:00`); const x = [String(d.getDate()), d.toLocaleString('en-US',{month:'short'}).toUpperCase(), t.title, t.category]; return (
-              <div key={x[2]}>
-                <time>
-                  <b>{x[0]}</b>
-                  <small>{x[1]}</small>
-                </time>
-                <i />
-                <p>
-                  <strong>{x[2]}</strong>
-                  <span>{x[3]}</span>
-                </p>
-              </div>
-            ); })}
-          </div>
-        </section>
-        <section className="panel">
-          <div className="section-head">
-            <div>
-              <h2>Quick actions</h2>
-              <p>Capture something new</p>
-            </div>
-          </div>
-          <div className="quick-actions">
-            {[
-              [Upload, 'Upload document'],
-              [FileImage, 'Upload image'],
-              [FileText, 'Paste text'],
-              [Plus, 'Add manually'],
-            ].map(([I, t], i) => (
-              <button key={t} onClick={() => nav(`/app/add?method=${i}`)}>
-                <I size={19} />
-                <span>{t}</span>
-                <ArrowRight size={14} />
-              </button>
-            ))}
-          </div>
-        </section>
+        <section className="panel"><SectionHead title="Upcoming reminders" subtitle="Your next active reminders" action={() => nav('/app/reminders')} label="View all" /><div className="timeline">
+          {data.upcomingReminders.length ? data.upcomingReminders.map((reminder) => { const date = new Date(reminder.remindAt); return <div key={reminder.id}><time><b>{date.getDate()}</b><small>{date.toLocaleString(undefined, { month: 'short' }).toUpperCase()}</small></time><i /><p><strong>{reminder.title}</strong><span>{date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span></p></div>; }) : <InlineEmpty icon={BellRing} text="No upcoming reminders." />}
+        </div></section>
       </div>
-      <section className="panel recent">
-        <div className="section-head">
-          <div>
-            <h2>Recent documents</h2>
-            <p>Recently organized by LifeAdmin</p>
-          </div>
-          <button onClick={() => nav('/app/documents')}>
-            View all documents <ArrowRight size={14} />
-          </button>
-        </div>
-        <div className="recent-table">
-          {[...documents].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5).map((d) => (
-            <button key={d.id} onClick={() => nav(`/app/documents/${d.id}`)}>
-              <span className="mini-file">
-                <FileText size={16} />
-              </span>
-              <span>
-                <strong>{d.title}</strong>
-                <small>
-                  {d.category} · Added {d.date}
-                </small>
-              </span>
-              <span>{d.type}</span>
-              <span>{d.originalFilename || 'Saved information'}</span>
-              <ArrowRight size={15} />
-            </button>
-          ))}
-          {!documents.length && <div className="recent-documents-empty"><FileText /><div><strong>No documents yet</strong><small>Add your first piece of information to see it here.</small></div><button onClick={() => nav('/app/add')}>Add Information</button></div>}
-        </div>
+      <section className="panel progress-panel dashboard-progress-panel">
+        <div className="section-head"><div><h2>Task progress</h2><p>All current tasks, separate from the deadline window</p></div></div>
+        <div className="dashboard-progress-stats"><p><strong>{data.taskProgress.completed}</strong><span>Completed</span></p><p><strong>{data.taskProgress.pending}</strong><span>Pending</span></p><p><strong>{data.taskProgress.overdue}</strong><span>Overdue</span></p><p><strong>{data.taskProgress.total}</strong><span>Total active + completed</span></p></div>
+        <div className="ai-insight"><span><Lightbulb /></span><div><small>LIFEADMIN INSIGHT</small><p>{data.deadlineSummary.insight}</p></div><button onClick={() => nav('/app/tasks')}>Review deadlines <ArrowRight /></button></div>
       </section>
-    </>
-  );
+      <section className="panel recent"><SectionHead title="Recent documents" subtitle="Recently updated records" action={() => nav('/app/documents')} label="View all documents" /><div className="recent-table">
+        {data.recentDocuments.length ? data.recentDocuments.map((doc) => <button key={doc.id} onClick={() => nav(`/app/documents/${doc.id}`)}><span className="mini-file"><FileText size={16} /></span><span><strong>{doc.title}</strong><small>{doc.category} · {doc.type}</small></span><span>{doc.aiAnalysis?.status || 'Not analyzed'}</span><span>{doc.generatedTaskCount || 0} generated tasks</span><ArrowRight size={15} /></button>) : <InlineEmpty icon={FileText} text="No documents yet. Add information to begin." />}
+      </div></section>
+    </>}
+  </>;
 }
+
+function Metric({ icon: Icon, tone, label, value, note }) { return <div><span className={`metric-icon ${tone}`}><Icon /></span><p>{label}</p><strong>{value}</strong><small>{note}</small></div>; }
+function SectionHead({ title, subtitle, action, label }) { return <div className="section-head"><div><h2>{title}</h2><p>{subtitle}</p></div><button onClick={action}>{label} <ArrowRight size={14} /></button></div>; }
+function InlineEmpty({ icon: Icon, text }) { return <div className="dashboard-inline-empty"><Icon /><span>{text}</span></div>; }
+function TaskFocusItem({ task, complete, nav }) { return <div className="attention-row focus-task"><CheckCircle onClick={() => complete(task.id)} /><div><strong>{task.title}</strong><span>Task · {task.date ? `Due ${dueLabel(task.date)}` : 'High priority'} · {task.priority}</span></div><PriorityBadge priority={task.priority} /><button onClick={() => nav('/app/tasks')} aria-label={`Open ${task.title}`}><ArrowRight size={16} /></button></div>; }
+function ReminderFocusItem({ reminder, nav }) { const date = new Date(reminder.remindAt); return <div className="attention-row focus-reminder"><span className="focus-reminder-icon"><BellRing /></span><div><strong>{reminder.title}</strong><span>Reminder · Today at {date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span></div><span className="focus-type-badge">REMINDER</span><button onClick={() => nav('/app/reminders')} aria-label={`Open ${reminder.title}`}><ArrowRight size={16} /></button></div>; }

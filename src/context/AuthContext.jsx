@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { authService } from '../services/authService';
+import { assistantService } from '../services/assistantService';
 import { getToken, removeToken, setToken } from '../utils/authStorage';
 
 const AuthContext = createContext(null);
@@ -35,19 +36,20 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('lifeadmin:unauthorized', expireSession);
   }, []);
 
-  const acceptSession = (data, remember) => {
+  const acceptSession = async (data, remember) => {
+    if (getToken()) await assistantService.clear().catch(() => {});
     setToken(data.token, remember);
     setUser(data.user);
     return data.user;
   };
   const login = async (values, remember = false) =>
-    acceptSession(await authService.login(values), remember);
-  const register = async (values) => acceptSession(await authService.register(values), true);
+    await acceptSession(await authService.login(values), remember);
+  const register = async (values) => await acceptSession(await authService.register(values), true);
   const loginWithGoogle = async (credential, remember = true) =>
-    acceptSession(await authService.google(credential), remember);
-  const logout = () => {
-    removeToken();
-    setUser(null);
+    await acceptSession(await authService.google(credential), remember);
+  const logout = async () => {
+    try { await assistantService.clear(); } catch { /* Local logout must still succeed. */ }
+    finally { removeToken(); setUser(null); }
   };
   const refreshCurrentUser = async () => {
     const data = await authService.me();

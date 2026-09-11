@@ -103,12 +103,21 @@ const documentSchema = new mongoose.Schema(
     extractedText: {
       type: String,
       default: '',
-      maxlength: [200000, 'Extracted text cannot exceed 200000 characters'],
+      maxlength: [2000000, 'Extracted text cannot exceed 2000000 characters'],
     },
+    knowledgeRevision: { type: String, default: null },
+    knowledgePending: { type: Boolean, default: true },
     aiAnalysis: {
       type: aiAnalysisSchema,
       default: undefined,
     },
+    taskGenerationStatus: {
+      type: String,
+      enum: ['not_started', 'processing', 'completed', 'no_actions', 'failed'],
+      default: 'not_started',
+    },
+    taskGenerationAt: { type: Date, default: null },
+    generatedTaskCount: { type: Number, min: 0, default: 0 },
   },
   { timestamps: true },
 );

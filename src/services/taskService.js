@@ -11,7 +11,7 @@ export function mapTask(task) {
     documentId: task.documentId || null,
     source: task.documentId || null,
     sourceType: task.source,
-    category: task.source === 'ai_confirmed' ? 'AI Confirmed' : 'Personal',
+    category: task.source === 'ai_automatic' ? 'AI Generated' : task.source === 'ai_confirmed' ? 'AI Confirmed' : 'Personal',
     priority: task.priority?.toUpperCase() || 'MEDIUM',
     calculatedPriority: task.calculatedPriority?.toUpperCase() || task.priority?.toUpperCase() || 'LOW',
     priorityOverride: task.priorityOverride?.toUpperCase() || '',
@@ -25,6 +25,7 @@ export function mapTask(task) {
 
 function toApiTask(values) {
   const payload = {};
+  if (Object.hasOwn(values, 'estimatedDuration')) payload.estimatedDuration = values.estimatedDuration;
   if (Object.hasOwn(values, 'title')) payload.title = values.title;
   if (Object.hasOwn(values, 'description')) payload.description = values.description;
   if (Object.hasOwn(values, 'priority')) payload.priority = values.priority.toLowerCase();

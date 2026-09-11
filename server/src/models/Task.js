@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 export const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'cancelled'];
 export const TASK_PRIORITIES = ['low', 'medium', 'high'];
-export const TASK_SOURCES = ['manual', 'ai_confirmed'];
+export const TASK_SOURCES = ['manual', 'ai_confirmed', 'ai_automatic'];
 
 const taskSchema = new mongoose.Schema(
   {
@@ -19,6 +19,8 @@ const taskSchema = new mongoose.Schema(
     priorityOverride: { type: String, enum: TASK_PRIORITIES, default: null },
     priorityCalculatedAt: { type: Date, default: null },
     dueDate: { type: Date, default: null },
+    estimatedDuration: { type: Number, min: 1, max: 2400, default: null, validate: { validator: v => v === null || Number.isInteger(v), message: 'Duration must be whole minutes' } },
+    schedulingRevision: { type: Number, default: 0, select: false },
     source: { type: String, enum: TASK_SOURCES, required: true, default: 'manual' },
   },
   { timestamps: true },
@@ -27,6 +29,7 @@ const taskSchema = new mongoose.Schema(
 taskSchema.index({ userId: 1, createdAt: -1 });
 taskSchema.index({ userId: 1, status: 1 });
 taskSchema.index({ userId: 1, documentId: 1 });
+taskSchema.index({ userId: 1, status: 1, dueDate: 1 });
 
 const Task = mongoose.models.Task || mongoose.model('Task', taskSchema);
 export default Task;

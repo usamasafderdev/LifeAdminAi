@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { PDFParse } from 'pdf-parse';
 
-export const MAX_EXTRACTED_TEXT_LENGTH = 200000;
+export const MAX_EXTRACTED_TEXT_LENGTH = 2000000;
 
 export class PdfExtractionError extends Error {
   constructor(message, statusCode = 400) {

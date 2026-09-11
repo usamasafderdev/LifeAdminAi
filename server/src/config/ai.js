@@ -18,12 +18,17 @@ export function getAiConfig() {
     apiKey: process.env.AI_API_KEY?.trim() || '',
     model: process.env.AI_MODEL?.trim() || '',
     timeoutMs: parseTimeout(process.env.AI_TIMEOUT_MS),
+    fallbackProvider: (process.env.AI_FALLBACK_PROVIDER || '').trim().toLowerCase(),
+    geminiApiKey: process.env.GEMINI_API_KEY?.trim() || '',
+    geminiModel: process.env.GEMINI_MODEL?.trim() || '',
   });
 }
 
 export function isAiConfigured() {
   const config = getAiConfig();
-  return Boolean(config.apiKey && config.model && config.provider === 'groq');
+  const primary = config.provider === 'groq' ? config.apiKey && config.model : config.provider === 'gemini' ? config.geminiApiKey && config.geminiModel : false;
+  const fallback = config.fallbackProvider === 'gemini' && config.geminiApiKey && config.geminiModel;
+  return Boolean(primary || fallback);
 }
 
 export function getAiMetadata() {
@@ -32,6 +37,8 @@ export function getAiMetadata() {
     configured: isAiConfigured(),
     provider: config.provider,
     model: config.model || null,
+    fallbackProvider: config.fallbackProvider || null,
+    fallbackConfigured: Boolean(config.fallbackProvider === 'gemini' && config.geminiApiKey && config.geminiModel),
   });
 }
 

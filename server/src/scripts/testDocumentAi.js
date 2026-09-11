@@ -1,8 +1,10 @@
+import DocumentChunk from '../models/DocumentChunk.js';
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import app from '../app.js';
 import { connectDB } from '../config/db.js';
 import Document from '../models/Document.js';
+import Task from '../models/Task.js';
 import User from '../models/User.js';
 import { setDocumentAnalyzerForTests } from '../controllers/documentController.js';
 import { AiError } from '../services/ai/aiService.js';
@@ -30,17 +32,21 @@ const validAnalysis = {
 async function run() {
   let httpServer;
   let testUserIds = [];
+  let evolvingVersion = 1;
   try {
     await connectDB();
     await Promise.all([User.init(), Document.init()]);
     const oldUsers = await User.find({ email: { $in: EMAILS } }).select('_id');
     const oldIds = oldUsers.map((user) => user._id);
-    if (oldIds.length) await Document.deleteMany({ userId: { $in: oldIds } });
+    if (oldIds.length) await Promise.all([Promise.all([Document.deleteMany({ userId: { $in: oldIds } }), DocumentChunk.deleteMany({ userId: { $in: oldIds } })]), Task.deleteMany({ userId: { $in: oldIds } })]);
     await User.deleteMany({ email: { $in: EMAILS } });
 
     setDocumentAnalyzerForTests(async ({ title }) => {
       if (title === 'Invalid AI response') throw new DocumentAiError();
       if (title === 'Provider failure') throw new AiError('AI_PROVIDER_UNAVAILABLE', { statusCode: 503 });
+      if (title === 'CV' || title === 'Information article') return { ...validAnalysis, actionRequired: false, extractedActions: [], summary: 'Informational content.' };
+      if (title === 'Invoice') return { ...validAnalysis, category: 'invoice', extractedActions: [{ title: 'Pay invoice', description: 'Payment is explicitly required.', priority: 'high' }] };
+      if (title === 'Evolving actions') return { ...validAnalysis, extractedActions: [validAnalysis.extractedActions[0], ...(evolvingVersion > 1 ? [{ title: 'Upload receipt', description: 'Upload the payment receipt.', priority: 'medium' }] : [])] };
       return validAnalysis;
     });
 
@@ -75,6 +81,21 @@ async function run() {
     const empty = await create(userA.body.token, 'Empty document', '');
     const invalid = await create(userA.body.token, 'Invalid AI response');
     const unavailable = await create(userA.body.token, 'Provider failure');
+    const cv = await create(userA.body.token, 'CV', 'Developed MERN applications and worked at XYZ.');
+    const article = await create(userA.body.token, 'Information article', 'Cloud storage keeps files on remote servers.');
+    const invoice = await create(userA.body.token, 'Invoice', 'Pay PKR 4,000 by September 10.');
+    const evolving = await create(userA.body.token, 'Evolving actions');
+    check(owned.status === 201 && owned.body.document.aiAnalysis.status === 'completed', 'Creation runs automatic analysis');
+    check(owned.body.taskGeneration.created === validAnalysis.extractedActions.length, 'Creation automatically generates actionable tasks');
+    check(invalid.status === 201 && invalid.body.document.aiAnalysis.status === 'failed', 'Invalid AI output preserves the document');
+    check(unavailable.status === 201 && unavailable.body.document.aiAnalysis.status === 'failed', 'Provider failure preserves the document');
+    check(cv.body.taskGeneration.created === 0 && article.body.taskGeneration.created === 0, 'CV and informational uploads create no tasks');
+    check(invoice.body.taskGeneration.created === 1, 'Invoice automatically creates payment task');
+    evolvingVersion = 2;
+    const evolved = await request(`/api/documents/${evolving.body.document._id}/analyze`, { method: 'POST', token: userA.body.token, body: { regenerate: true } });
+    check(evolved.body.taskGeneration.created === 1 && evolved.body.taskGeneration.skipped === 1, 'Reanalysis creates only the new action');
+    const unchanged = await request(`/api/documents/${evolving.body.document._id}/analyze`, { method: 'POST', token: userA.body.token, body: { regenerate: true } });
+    check(unchanged.body.taskGeneration.created === 0 && unchanged.body.taskGeneration.skipped === 2, 'Reanalysis does not duplicate tasks');
     const previouslyConfirmed = await Document.create({
       userId: userA.body.user._id,
       title: 'Previously confirmed assignment',
@@ -122,8 +143,8 @@ async function run() {
     const unavailableResult = await request(`/api/documents/${unavailable.body.document._id}/analyze`, { method: 'POST', token: userA.body.token });
     check(unavailableResult.status === 503 && unavailableResult.body.message === 'The AI provider is temporarily unavailable.', 'AI failure handled safely');
 
-    const legacy = await create(userA.body.token, 'Legacy-style document');
-    const legacyResult = await request(`/api/documents/${legacy.body.document._id}`, { token: userA.body.token });
+    const legacy = await Document.create({ userId: userA.body.user._id, title: 'Legacy-style document', sourceType: 'text', extractedText: 'Legacy text' });
+    const legacyResult = await request(`/api/documents/${legacy._id}`, { token: userA.body.token });
     check(legacyResult.status === 200 && legacyResult.body.document.aiAnalysis === undefined, 'Documents without AI data still work');
     console.log('Document AI verification completed successfully.');
   } catch (error) {
@@ -133,7 +154,7 @@ async function run() {
     setDocumentAnalyzerForTests();
     if (httpServer) await new Promise((resolve) => httpServer.close(resolve));
     if (mongoose.connection.readyState) {
-      if (testUserIds.length) await Document.deleteMany({ userId: { $in: testUserIds } });
+      if (testUserIds.length) await Promise.all([Promise.all([Document.deleteMany({ userId: { $in: testUserIds } }), DocumentChunk.deleteMany({ userId: { $in: testUserIds } })]), Task.deleteMany({ userId: { $in: testUserIds } })]);
       await User.deleteMany({ email: { $in: EMAILS } });
       await mongoose.connection.close();
     }

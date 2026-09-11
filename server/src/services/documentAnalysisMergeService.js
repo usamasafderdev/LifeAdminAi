@@ -20,6 +20,14 @@ function uniqueObjects(items, keyFor, limit = 50) {
   }).slice(0, limit);
 }
 
+function compactKeyInformation(items, actions, limit = 12) {
+  const actionText = actions.map((action) => `${action.title} ${action.description}`.toLowerCase());
+  return uniqueStrings(items).filter((item) => {
+    const normalized = item.toLowerCase();
+    return !actionText.some((text) => normalized.length > 20 && (text.includes(normalized) || normalized.includes(text)));
+  }).slice(0, limit);
+}
+
 export function mergeDocumentAnalyses(analyses) {
   const categories = analyses.map((item) => item.category).filter(Boolean);
   const category = categories.sort((a, b) => categories.filter((item) => item === b).length - categories.filter((item) => item === a).length)[0] || '';
@@ -36,7 +44,7 @@ export function mergeDocumentAnalyses(analyses) {
       (item) => `${item.date?.trim().toLocaleLowerCase()}|${item.description?.trim().toLocaleLowerCase()}`,
     ),
     extractedActions,
-    keyInformation: uniqueStrings(analyses.flatMap((item) => item.keyInformation || [])),
+    keyInformation: compactKeyInformation(analyses.flatMap((item) => item.keyInformation || []), extractedActions),
     risksOrConsequences: uniqueStrings(analyses.flatMap((item) => item.risksOrConsequences || [])),
   };
   return validateAiAnalysis(merged);

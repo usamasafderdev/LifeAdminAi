@@ -1,3 +1,4 @@
+import DocumentChunk from '../models/DocumentChunk.js';
 import 'dotenv/config';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -44,7 +45,7 @@ async function run() {
       const storedPath = resolveStoredFile(document.filePath);
       if (storedPath) await fs.rm(storedPath, { force: true });
     }));
-    if (oldIds.length) await Document.deleteMany({ userId: { $in: oldIds } });
+    if (oldIds.length) await Promise.all([Document.deleteMany({ userId: { $in: oldIds } }), DocumentChunk.deleteMany({ userId: { $in: oldIds } })]);
     await User.deleteMany({ email: { $in: EMAILS } });
 
     fixtureDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'lifeadmin-upload-test-'));
@@ -142,7 +143,7 @@ async function run() {
         const storedPath = resolveStoredFile(document.filePath);
         if (storedPath) await fs.rm(storedPath, { force: true });
       }));
-      if (testUserIds.length) await Document.deleteMany({ userId: { $in: testUserIds } });
+      if (testUserIds.length) await Promise.all([Document.deleteMany({ userId: { $in: testUserIds } }), DocumentChunk.deleteMany({ userId: { $in: testUserIds } })]);
       await User.deleteMany({ email: { $in: EMAILS } });
       await mongoose.connection.close();
     }

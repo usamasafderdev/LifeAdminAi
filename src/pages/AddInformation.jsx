@@ -12,10 +12,10 @@ export default function AddInformation() {
   const [params] = useSearchParams();
   const [method, setMethod] = useState(Number(params.get('method')) || 0);
   const nav = useNavigate();
-  const { setDocuments, notify } = useApp();
-  const addToWorkspace = (document, message) => { setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)]); notify(message); nav(`/app/documents/${document.id}`); };
+  const { setDocuments, notify, reloadTasks } = useApp();
+  const addToWorkspace = async (document, message) => { setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)]); await reloadTasks(); notify(message); nav(`/app/documents/${document.id}`); };
   const saveEntry = async (payload) => addToWorkspace(await documentService.create(payload), 'Information saved successfully');
-  const saveUpload = async (formData) => { const result = await documentService.uploadDocument(formData); addToWorkspace(result.document, result.message); };
+  const saveUpload = async (formData) => { const result = await documentService.uploadDocument(formData); return addToWorkspace(result.document, result.message); };
   return <><PageHeader title="Add Information" description="Save a PDF, image, text, or manual record to your workspace." /><div className="method-tabs">{methods.map(([name, Icon, description], index) => <button key={name} className={method === index ? 'active' : ''} onClick={() => setMethod(index)}><Icon size={18} /><span><strong>{name}</strong><small>{description}</small></span></button>)}</div><section className="panel add-panel">{method < 2 ? <Upload key={method} method={method} onSave={saveUpload} /> : method === 2 ? <Paste onSave={saveEntry} /> : <Manual onSave={saveEntry} />}</section></>;
 }
 
@@ -39,7 +39,7 @@ function Upload({ method, onSave }) {
 function Paste({ onSave }) {
   const [title, setTitle] = useState(''), [category, setCategory] = useState('other'), [text, setText] = useState(''), [error, setError] = useState(''), [saving, setSaving] = useState(false);
   const submit = async () => { if (!title.trim()) return setError('Please enter a title.'); if (!text.trim()) return setError('Please enter information to save.'); setSaving(true); setError(''); try { await onSave({ title: title.trim(), sourceType: 'text', category, extractedText: text.trim() }); } catch (requestError) { setError(getErrorMessage(requestError, 'Unable to save information. Please try again.')); setSaving(false); } };
-  return <div className="paste-form">{error && <div className="form-error" role="alert">{error}</div>}<Field label="Title"><input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder="Internship Submission Notice" /></Field><Field label="Category"><select value={category} onChange={(event) => setCategory(event.target.value)}>{documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field><Field label="Information to save"><textarea rows="10" maxLength={200000} value={text} onChange={(event) => setText(event.target.value)} placeholder="Please submit your internship report before September 10." /><small className="char-count">{text.length} characters</small></Field><div className="panel-footer"><Button disabled={saving} onClick={submit}>{saving && <span className="button-spinner" />}{saving ? 'Saving information' : 'Save information'}</Button></div></div>;
+  return <div className="paste-form">{error && <div className="form-error" role="alert">{error}</div>}<Field label="Title"><input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder="Internship Submission Notice" /></Field><Field label="Category"><select value={category} onChange={(event) => setCategory(event.target.value)}>{documentCategories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field><Field label="Information to save"><textarea rows="10" maxLength={2000000} value={text} onChange={(event) => setText(event.target.value)} placeholder="Please submit your internship report before September 10." /><small className="char-count">{text.length} characters</small></Field><div className="panel-footer"><Button disabled={saving} onClick={submit}>{saving && <span className="button-spinner" />}{saving ? 'Saving information' : 'Save information'}</Button></div></div>;
 }
 
 function Manual({ onSave }) {

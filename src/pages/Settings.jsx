@@ -1,3 +1,6 @@
+import { NotificationSettings } from '../components/NotificationCenter';
+import { DailyBriefingSettings } from '../components/DailyBriefingCard';
+import { Link } from 'react-router-dom';
 import { Bell, Bot, Download, Monitor, Moon, Palette, Shield, Sun, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
@@ -8,6 +11,7 @@ const sections = [
   ['Profile', UserRound],
   ['Reminder preferences', Bell],
   ['AI settings', Bot],
+  ['Daily briefing', Bot],
   ['Notifications', Bell],
   ['Appearance', Palette],
   ['Privacy & data', Shield],
@@ -21,6 +25,7 @@ export default function Settings() {
       <PageHeader title="Settings" description="Manage your account, preferences and data." />
       <div className="settings-layout">
         <nav className="settings-nav">
+          <Link className="memory-settings-link" to="/app/settings/memory"><Bot />Memory</Link>
           {sections.map(([x, I]) => (
             <button className={active === x ? 'active' : ''} key={x} onClick={() => setActive(x)}>
               <I />
@@ -29,6 +34,7 @@ export default function Settings() {
           ))}
         </nav>
         <section className="panel settings-panel">
+          {active === 'Daily briefing' && <DailyBriefingSettings />}
           {active === 'Profile' && (
             <>
               <SettingHead title="Profile" text="Update your personal details and timezone." />
@@ -88,23 +94,7 @@ export default function Settings() {
               </div>
             </>
           )}
-          {active === 'Notifications' && (
-            <>
-              <SettingHead
-                title="Notifications"
-                text="Control which events appear in your notification center."
-              />
-              <ToggleList
-                labels={[
-                  'In-app notifications',
-                  'Deadline alerts',
-                  'Priority changes',
-                  'Reminder notifications',
-                ]}
-              />
-              <Save notify={notify} />
-            </>
-          )}
+          {active === 'Notifications' && <NotificationSettings />}
           {active === 'Appearance' && (
             <>
               <SettingHead title="Appearance" text="Choose how LifeAdmin looks on this device." />
