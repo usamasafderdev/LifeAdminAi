@@ -1,9 +1,10 @@
-import { FileStack, Grid2X2, List, Plus, X, CheckSquare, Square } from 'lucide-react';
+﻿import { FileStack, FileText, FileImage, FolderOpen, Sparkles, ArrowUpRight, Grid2X2, List, Plus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { documentService } from '../services/documentService';
 import { useNavigate } from 'react-router-dom';
 import { DocumentCard } from '../components/ItemRows';
 import { Button, ConfirmDialog, EmptyState, SearchBox, Skeleton } from '../components/UI';
+import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { documentCategories } from '../services/documentService';
 import { getErrorMessage } from '../services/api';
@@ -33,12 +34,13 @@ const sortOptions = [
   ['newest', 'Newest'],
   ['oldest', 'Oldest'],
   ['updated', 'Recently updated'],
-  ['az', 'Title A–Z'],
-  ['za', 'Title Z–A'],
+  ['az', 'Title Aâ€“Z'],
+  ['za', 'Title Zâ€“A'],
 ];
 
 export default function Documents() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const {
     documents,
     tasks,
@@ -171,31 +173,23 @@ export default function Documents() {
     : 0;
   return (
     <div className="documents-library-shell">
-      <div className="library-atmosphere">
-        <i />
-        <i />
-        <i />
-      </div>
       <header className="library-heading">
-        <div>
-          <span className="library-kicker">
-            <FileStack />
-            Personal archive
-          </span>
-          <h1>Documents</h1>
-          <p>
-            {documents.length} saved record{documents.length === 1 ? '' : 's'} ·{' '}
-            {documents.filter((item) => item.sourceType === 'pdf').length} PDFs ·{' '}
-            {documents.filter((item) => item.sourceType === 'image').length} images
-          </p>
-        </div>
-        <Button onClick={() => nav('/app/add')}>
-          <Plus size={16} />
-          Add Information
-        </Button>
+        <div className="library-title"><span className="library-title-icon"><FolderOpen /></span><div><h1>Documents</h1><p>Manage, search, and organize your information in one place.</p></div></div>
+        <Button onClick={() => nav('/app/add')}><Plus size={16} />Add Information</Button>
       </header>
+      <div className="library-intro">
+        <section className="library-stats" aria-label="Document overview">
+          {[
+            { label: 'Total documents', value: documents.length, Icon: FileStack, tone: 'green' },
+            { label: 'PDF files', value: documents.filter(item => item.sourceType === 'pdf').length, Icon: FileText, tone: 'red' },
+            { label: 'Images', value: documents.filter(item => item.sourceType === 'image').length, Icon: FileImage, tone: 'blue' },
+            { label: 'Categories used', value: new Set(documents.map(item => item.categoryValue)).size, Icon: FolderOpen, tone: 'purple' },
+          ].map(({ label, value, Icon, tone }) => <div className={`library-stat stat-${tone}`} key={label}><span><Icon size={20} /></span><div><strong>{documentsLoading ? '?' : value}</strong><small>{label}</small></div></div>)}
+        </section>
+        <aside className="library-insight"><span className="library-insight-symbol" aria-hidden="true"><FolderOpen /><Sparkles /></span><div><h2>Turn your documents into insights</h2><p>Keep notes, assignments, and bills together. Ask questions, find key details, and plan your next steps.</p></div></aside>
+      </div>
       <div className="library-command-bar">
-        <SearchBox value={query} onChange={setQuery} placeholder="Search your document library…" />
+        <SearchBox value={query} onChange={setQuery} placeholder="Search your document libraryâ€¦" />
         <div className="tool-filters">
           <label>
             <span className="sr-only">Source type</span>
@@ -238,11 +232,12 @@ export default function Documents() {
         </div>
       </div>
       <div className="library-category-tabs">
-        <button className={category === 'all' ? 'active' : ''} onClick={() => setCategory('all')}>
+        <button aria-pressed={category === 'all'} className={category === 'all' ? 'active' : ''} onClick={() => setCategory('all')}>
           All
         </button>
         {documentCategories.map(([value, label]) => (
           <button
+            aria-pressed={category === value}
             className={category === value ? 'active' : ''}
             key={value}
             onClick={() => setCategory(value)}
@@ -277,7 +272,7 @@ export default function Documents() {
               disabled={crossBusy || selectedIds.length < 2}
               onClick={analyzeSelected}
             >
-              {crossBusy ? 'Analyzing…' : 'Analyze Together'}
+              {crossBusy ? 'Analyzingâ€¦' : 'Analyze Together'}
             </Button>
           </div>
         </div>
@@ -290,9 +285,9 @@ export default function Documents() {
       )}
       <div className="library-results">
         <div className="library-results-label">
-          <span>Library</span>
+          <span>{list.length} document{list.length === 1 ? '' : 's'}</span>
           <small>
-            {list.length} item{list.length === 1 ? '' : 's'} shown
+            {hasFilters ? 'Filtered library' : 'Showing all documents'}
           </small>
         </div>
         {documentsLoading ? (
@@ -321,13 +316,14 @@ export default function Documents() {
                 onToggleSelect={() => toggleSelection(document.id)}
               />
             ))}
+            {view === 'grid' && !hasFilters && list.length < 3 && <div className="library-add-card"><FileStack size={32} /><h2>Add more documents</h2><p>Build your library with PDFs, images, text, and manual records.</p><Button variant="secondary" onClick={() => nav('/app/add')}><Plus size={16} />Add Information</Button><small>PDF ? JPEG, PNG, WebP ? Text</small></div>}
           </div>
         ) : (
           <EmptyState
             title={
               documents.length
                 ? query.trim()
-                  ? `No documents match “${query.trim()}”`
+                  ? `No documents match â€œ${query.trim()}â€`
                   : 'No matching documents'
                 : 'No documents yet'
             }
@@ -348,6 +344,7 @@ export default function Documents() {
           />
         )}
       </div>
+      <button className="library-ai-hint" onClick={() => nav('/app/ask')}><Sparkles size={21} /><span><strong>Ask LifeAdmin</strong><small>Ask questions about your documents and turn information into action.</small></span><ArrowUpRight size={18} /></button>
       <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => {
@@ -361,8 +358,8 @@ export default function Documents() {
         text={
           deleteError ||
           (linkedTaskCount
-            ? `Deleting “${deleting?.title || 'this document'}” will also permanently delete ${linkedTaskCount} linked task${linkedTaskCount === 1 ? '' : 's'}${deleting?.sourceType === 'pdf' || deleting?.sourceType === 'image' ? ' and its uploaded file' : ''}.`
-            : `Delete “${deleting?.title || 'this document'}” permanently${deleting?.sourceType === 'pdf' || deleting?.sourceType === 'image' ? ' along with its uploaded file' : ''}?`)
+            ? `Deleting â€œ${deleting?.title || 'this document'}â€ will also permanently delete ${linkedTaskCount} linked task${linkedTaskCount === 1 ? '' : 's'}${deleting?.sourceType === 'pdf' || deleting?.sourceType === 'image' ? ' and its uploaded file' : ''}.`
+            : `Delete â€œ${deleting?.title || 'this document'}â€ permanently${deleting?.sourceType === 'pdf' || deleting?.sourceType === 'image' ? ' along with its uploaded file' : ''}?`)
         }
         confirmLabel={linkedTaskCount ? 'Delete document & tasks' : 'Delete document'}
         busy={deleteBusy}
@@ -370,3 +367,4 @@ export default function Documents() {
     </div>
   );
 }
+

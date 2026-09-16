@@ -4,18 +4,24 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { EmptyState, PageHeader, SearchBox } from '../components/UI';
 
-const cleanSearchText = (value) => String(value || '')
-  .replace(/\[\[[^\]]+\]\]/g, ' ')
-  .replace(/<br\s*\/?>/gi, ' ')
-  .replace(/<[^>]+>/g, ' ')
-  .replace(/&nbsp;/gi, ' ')
-  .replace(/&amp;/gi, '&')
-  .replace(/\|+/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
+const cleanSearchText = (value) =>
+  String(value || '')
+    .replace(/\[\[[^\]]+\]\]/g, ' ')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\|+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const getSnippet = (item, name, query) => {
-  const source = item.extractedText || item.summary || item.detail || item.description || `${item.category || name}${item.due ? ` · Due ${item.due}` : ''}`;
+  const source =
+    item.extractedText ||
+    item.summary ||
+    item.detail ||
+    item.description ||
+    `${item.category || name}${item.due ? ` · Due ${item.due}` : ''}`;
   const text = cleanSearchText(source);
   if (!text) return 'No preview available for this result.';
   const matchIndex = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1;
@@ -28,9 +34,13 @@ const getSnippet = (item, name, query) => {
 function HighlightedText({ text, query }) {
   if (!query) return text;
   const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'));
-  return parts.map((part, index) => part.toLowerCase() === query.toLowerCase()
-    ? <mark key={`${part}-${index}`}>{part}</mark>
-    : part);
+  return parts.map((part, index) =>
+    part.toLowerCase() === query.toLowerCase() ? (
+      <mark key={`${part}-${index}`}>{part}</mark>
+    ) : (
+      part
+    ),
+  );
 }
 
 const formatType = (item, name) => {
@@ -44,7 +54,9 @@ const formatType = (item, name) => {
 const formatDate = (value) => {
   if (!value) return '';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : `Updated ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  return Number.isNaN(date.getTime())
+    ? ''
+    : `Updated ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 };
 
 export default function SearchPage() {
@@ -105,7 +117,9 @@ export default function SearchPage() {
                 <section key={name}>
                   <header className="search-results-head">
                     <h2>{name}</h2>
-                    <span>{items.length} {items.length === 1 ? 'result' : 'results'}</span>
+                    <span>
+                      {items.length} {items.length === 1 ? 'result' : 'results'}
+                    </span>
                   </header>
                   {items.map((item) => (
                     <button className="search-result-card" key={item.id} onClick={() => go(item)}>
@@ -114,27 +128,41 @@ export default function SearchPage() {
                       </span>
                       <div className="search-result-body">
                         <div className="search-result-title-row">
-                          <strong><HighlightedText text={item.title} query={q} /></strong>
-                          <span className="search-result-category">{item.category || name.slice(0, -1)}</span>
+                          <strong>
+                            <HighlightedText text={item.title} query={q} />
+                          </strong>
+                          <span className="search-result-category">
+                            {item.category || name.slice(0, -1)}
+                          </span>
                         </div>
                         <p className="search-result-snippet">
                           <HighlightedText text={getSnippet(item, name, q)} query={q} />
                         </p>
                         <div className="search-result-meta">
-                          <span><Icon size={12} />{formatType(item, name)}</span>
+                          <span>
+                            <Icon size={12} />
+                            {formatType(item, name)}
+                          </span>
                           {item.status && <span>{item.status}</span>}
                           {item.due && <span>Due {item.due}</span>}
-                          {formatDate(item.updatedAt || item.createdAt) && <span>{formatDate(item.updatedAt || item.createdAt)}</span>}
+                          {formatDate(item.updatedAt || item.createdAt) && (
+                            <span>{formatDate(item.updatedAt || item.createdAt)}</span>
+                          )}
                         </div>
                       </div>
-                      <span className="search-result-action">Open <ArrowUpRight size={14} /></span>
+                      <span className="search-result-action">
+                        Open <ArrowUpRight size={14} />
+                      </span>
                     </button>
                   ))}
                 </section>
               ),
           )}
           {groups.every((g) => g[2].length === 0) && (
-            <EmptyState title="No results found" text={`We couldn't find anything matching “${q}”. Try a different keyword, a broader phrase, or a document title.`} />
+            <EmptyState
+              title="No results found"
+              text={`We couldn't find anything matching “${q}”. Try a different keyword, a broader phrase, or a document title.`}
+            />
           )}
         </div>
       )}

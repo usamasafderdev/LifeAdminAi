@@ -77,6 +77,7 @@ export function DocumentCard({ doc, view = 'grid', onDelete, selected = false, o
           aria-label={
             selected ? `Remove ${doc.title} from analysis` : `Select ${doc.title} for analysis`
           }
+          aria-pressed={selected}
           className={selected ? 'selected' : ''}
           onClick={(event) => {
             event.stopPropagation();
@@ -119,18 +120,10 @@ export function DocumentCard({ doc, view = 'grid', onDelete, selected = false, o
       <div className="doc-body">
         <div className="doc-top">
           <Badge tone="neutral">{doc.category}</Badge>
-          {onDelete && (
-            <button
-              className="document-delete-action"
-              aria-label={`Delete ${doc.title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete(doc);
-              }}
-            >
-              <Trash2 />
-            </button>
-          )}
+          <details className="document-actions" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus(); } }}>
+            <summary aria-label={`Actions for ${doc.title}`}><MoreHorizontal size={18} /></summary>
+            <div><button onClick={() => nav(`/app/documents/${doc.id}`)}><ExternalLink size={14} />Open document</button>{onDelete && <button className="danger-text" onClick={event => { event.currentTarget.closest('details').open = false; onDelete(doc); }}><Trash2 size={14} />Delete</button>}</div>
+          </details>
         </div>
         <button className="document-open-action" onClick={() => nav(`/app/documents/${doc.id}`)}>
           <h3>{doc.title}</h3>
@@ -148,7 +141,7 @@ export function DocumentCard({ doc, view = 'grid', onDelete, selected = false, o
             <Calendar size={13} />
             {doc.date ? `Created ${doc.date}` : 'Saved'}
           </span>
-          <span title={doc.title || ''}>{doc.title || doc.type}</span>
+          <span>{doc.type || 'Record'}</span>
         </div>
       </div>
     </article>

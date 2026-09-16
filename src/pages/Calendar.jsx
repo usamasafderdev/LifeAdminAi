@@ -120,7 +120,9 @@ export default function Calendar() {
 
           <div className="calendar-summary-row">
             <div className="calendar-summary-card calendar-summary-task">
-              <span className="calendar-summary-icon"><CalendarDays size={16} /></span>
+              <span className="calendar-summary-icon">
+                <CalendarDays size={16} />
+              </span>
               <div>
                 <strong>{monthSummary.taskCount}</strong>
                 <b>Task deadlines</b>
@@ -128,7 +130,9 @@ export default function Calendar() {
               </div>
             </div>
             <div className="calendar-summary-card calendar-summary-reminder">
-              <span className="calendar-summary-icon"><BellRing size={16} /></span>
+              <span className="calendar-summary-icon">
+                <BellRing size={16} />
+              </span>
               <div>
                 <strong>{monthSummary.reminderCount}</strong>
                 <b>Reminders</b>
@@ -136,7 +140,9 @@ export default function Calendar() {
               </div>
             </div>
             <div className="calendar-summary-card calendar-summary-scheduled">
-              <span className="calendar-summary-icon"><CheckCircle2 size={16} /></span>
+              <span className="calendar-summary-icon">
+                <CheckCircle2 size={16} />
+              </span>
               <div>
                 <strong>{monthSummary.eventCount}</strong>
                 <b>Scheduled items</b>
@@ -158,9 +164,15 @@ export default function Calendar() {
               </Button>
             </div>
             <div className="calendar-view-switcher" aria-label="Calendar view">
-              <button className="active" type="button" aria-current="page">Month</button>
-              <button type="button" disabled title="Week view is available in Smart Scheduling">Week</button>
-              <button type="button" disabled title="Day view is available in Smart Scheduling">Day</button>
+              <button className="active" type="button" aria-current="page">
+                Month
+              </button>
+              <button type="button" disabled title="Week view is available in Smart Scheduling">
+                Week
+              </button>
+              <button type="button" disabled title="Day view is available in Smart Scheduling">
+                Day
+              </button>
             </div>
           </div>
 
@@ -204,7 +216,9 @@ export default function Calendar() {
                             <small>
                               {event.type === 'task' ? 'Task' : 'Reminder'}
                               {event.priority ? ` · ${event.priority}` : ''}
-                              {event.type === 'reminder' && event.date ? ` · ${new Date(event.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : ''}
+                              {event.type === 'reminder' && event.date
+                                ? ` · ${new Date(event.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+                                : ''}
                             </small>
                           </button>
                         ))}
@@ -219,10 +233,22 @@ export default function Calendar() {
                 </div>
               )}
               <div className="calendar-legend">
-                <span><i className="task" />Task due date</span>
-                <span><i className="reminder" />Reminder</span>
-                <span><i className="completed" />Completed</span>
-                <span><i className="today" />Today</span>
+                <span>
+                  <i className="task" />
+                  Task due date
+                </span>
+                <span>
+                  <i className="reminder" />
+                  Reminder
+                </span>
+                <span>
+                  <i className="completed" />
+                  Completed
+                </span>
+                <span>
+                  <i className="today" />
+                  Today
+                </span>
               </div>
               <section className="calendar-mobile-list">
                 {events.map((event) => (

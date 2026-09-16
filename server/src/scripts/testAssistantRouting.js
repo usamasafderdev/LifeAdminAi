@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import { connectDB } from '../config/db.js';
 import {
   answerWorkspaceQuestion,
+  analyzeAssistantRequest,
   classifyAssistantIntent,
   isSelectedDocumentConversation,
 } from '../services/assistantService.js';
@@ -15,6 +16,23 @@ const live = process.argv.includes('--live');
 const userId = new mongoose.Types.ObjectId();
 try {
   await connectDB();
+  const mixedPlan = analyzeAssistantRequest(
+    'Based on my assignment, explain CBC and tell me how much time I should spend on it.',
+    [{ role: 'user', content: 'I need to finish the assignment this week.' }],
+  );
+  assert.equal(mixedPlan.mixed, true);
+  assert.ok(mixedPlan.dimensions.includes('document'));
+  assert.ok(mixedPlan.dimensions.includes('workspace'));
+  assert.ok(mixedPlan.dimensions.includes('reasoning'));
+  assert.ok(mixedPlan.sources.includes('selected_document'));
+  assert.ok(mixedPlan.sources.includes('workspace'));
+  const shoppingPlan = analyzeAssistantRequest('Used HP laptop with 16GB RAM in Lahore under 100k');
+  assert.ok(shoppingPlan.dimensions.includes('shopping'));
+  assert.ok(shoppingPlan.dimensions.includes('local'));
+  assert.equal(shoppingPlan.constraints.condition, 'Used');
+  assert.equal(shoppingPlan.constraints.specification, '16GB RAM');
+  assert.equal(shoppingPlan.constraints.budget, 'under 100k');
+  assert.equal(shoppingPlan.constraints.location, 'Lahore');
   await Task.create({
     userId,
     title: 'Routing verification task',
@@ -193,6 +211,26 @@ try {
   });
   assert.equal(independentRetrievalCalled, false);
   assert.match(independent.answer, /AES/);
+  let removedContextPrompt = '';
+  await answerWorkspaceQuestion({
+    userId,
+    message: 'Explain machine learning simply.',
+    history: [
+      {
+        role: 'assistant',
+        content: 'We were discussing Assignment.pdf.',
+        sources: [
+          { type: 'document', sourceId: new mongoose.Types.ObjectId(), label: 'Assignment' },
+        ],
+      },
+    ],
+    generate: async ({ systemPrompt }) => {
+      removedContextPrompt = systemPrompt;
+      return { text: 'Machine learning finds patterns in data.' };
+    },
+  });
+  assert.match(removedContextPrompt, /No document is currently selected/);
+  assert.match(removedContextPrompt, /historical only/);
   for (const [message, selectedDocumentId, expectsDocument] of [
     ['What is VPN?', new mongoose.Types.ObjectId(), false],
     ['Where can I buy a cricket bat physically in Lahore?', new mongoose.Types.ObjectId(), false],
@@ -227,6 +265,35 @@ try {
     assert.equal(documentRetrieved, expectsDocument);
     assert.match(result.answer, /AI answer/);
   }
+  let mixedWorkspaceRetrieved = false;
+  const mixedSourceResult = await answerWorkspaceQuestion({
+    userId,
+    selectedDocumentId: new mongoose.Types.ObjectId(),
+    message: 'Based on my assignment, what should I do next?',
+    retrieveDocument: async () => ({
+      document: { _id: new mongoose.Types.ObjectId(), title: 'assignment.pdf' },
+      chunks: [{ chunkIndex: 0, label: 'Requirements' }],
+      context: '[Chunk 1] Complete Part A and submit the report.',
+    }),
+    retrieve: async () => {
+      mixedWorkspaceRetrieved = true;
+      return {
+        direct: false,
+        context: 'Open task: Finish Part A by Friday.',
+        sources: [
+          { type: 'task', sourceId: new mongoose.Types.ObjectId(), label: 'Finish Part A' },
+        ],
+        metadata: { kind: 'workspace_reasoning' },
+      };
+    },
+    generate: async ({ userPrompt }) => {
+      assert.match(userPrompt, /<request_plan>/);
+      assert.match(userPrompt, /Finish Part A by Friday/);
+      return { text: 'Review Part A, then finish the report before Friday.' };
+    },
+  });
+  assert.equal(mixedWorkspaceRetrieved, true);
+  assert.match(mixedSourceResult.answer, /Review Part A/);
   const missing = await answerDocumentQuestion({
     document: { title: 'Receipt', extractedText: 'A red chair costs 20 dollars.' },
     question: 'When does my passport expire?',

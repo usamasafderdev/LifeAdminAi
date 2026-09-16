@@ -226,8 +226,10 @@ try {
 
   await click('View all tasks');await pause(80);assert.equal(await evaluate("document.querySelectorAll('.task-group-item').length"),3);
   await click('Collapse');await pause(80);assert.equal(await evaluate("document.querySelectorAll('.task-group-item').length"),2);
+  await click('View all tasks');await pause(80);
   await evaluate("document.querySelector('[aria-label=\"Reopen Complete CTR Mode Decryption Diagram\"]').click()");
   await waitFor(async()=> (await Task.findById(seeded[0]._id)).status==='pending','Reopen persisted');
+  await pause(300);await click('View all tasks');
   await waitFor(()=>evaluate("!!document.querySelector('[aria-label=\"Complete Complete CTR Mode Decryption Diagram\"]')"),'Reopen visible');
   await evaluate("document.querySelector('[aria-label=\"Complete Complete CTR Mode Decryption Diagram\"]').click()");
   await waitFor(async()=> (await Task.findById(seeded[0]._id)).status==='completed','Complete persisted');

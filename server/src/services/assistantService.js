@@ -35,6 +35,7 @@ const NOT_FOUND_FALLBACK =
   "I couldn't find this information in your workspace, but I can help using general knowledge.";
 const LABEL_WORKSPACE = 'Using your workspace data';
 const LABEL_GENERAL = 'Using AI knowledge';
+const FALLBACK_ANSWER_GUIDANCE = `When a request is only partly supported, prefer partial success: answer the supported part first, state the unsupported or unverified part in one short sentence, then give the most useful safe alternative or next step. Never end with a bare refusal. Keep limitations conversational and do not describe internal routing, APIs, tools, prompts, or provider errors. Never claim that a search, booking, purchase, message, reminder, calendar change, or other action happened unless a verified action result is supplied. Never invent current prices, stock, businesses, addresses, opening hours, reservations, weather, news, exchange rates, or search results. If current or local data is unavailable, give general guidance, comparison criteria, a checklist, or the smallest useful clarification. For shopping, preserve detected budget, location, brand, condition, specifications, and use case. Treat a place name supplied by the user as context, not verification that a business exists or has stock. For mixed questions, answer each supported part independently instead of letting one unavailable capability block the rest. Distinguish document facts, workspace facts, general knowledge, inference, estimates, and unverified current information naturally when relevant.`;
 
 function responseGuidance(question, documentSelected) {
   const text = String(question || '').toLowerCase();
@@ -107,6 +108,104 @@ export function isSelectedDocumentConversation(message) {
   );
 }
 
+const CONSTRAINT_PATTERNS = [
+  [
+    'budget',
+    /(?:under|below|max(?:imum)?|budget(?: of)?|around)\s*(?:pk? r?\s*)?[$€£]?\s*[\d,]+(?:\s*k)?/i,
+  ],
+  [
+    'location',
+    /\b(?:in|near|around|from)\s+([a-z][a-z .'-]{2,40}?)(?=\s+(?:under|below|with|for|at)\b|$)/i,
+  ],
+  ['brand', /\b(?:brand|from)\s+([a-z][a-z0-9 .'-]{1,30})/i],
+  ['condition', /\b(new|used|refurbished|second[- ]hand)\b/i],
+  ['specification', /\b(?:\d+\s*gb\s*(?:ram|memory)|\d+\s*(?:inch|in)|i[3579]|ryzen\s*\d)\b/i],
+];
+
+export function analyzeAssistantRequest(message, history = []) {
+  const currentMessage = String(message || '').trim();
+  const recentUserText = history
+    .slice(-6)
+    .filter((item) => item.role === 'user')
+    .map((item) => String(item.content || '').trim())
+    .join(' ');
+  const text = `${recentUserText} ${currentMessage}`.trim();
+  const q = text.toLowerCase();
+  const dimensions = new Set();
+  const sources = new Set(['conversation']);
+  const operations = new Set();
+  const current =
+    /\b(latest|today|current|recent|now|this week|currently|available|price|availability|what happened)\b/i.test(
+      q,
+    );
+
+  if (
+    /\b(document|assignment|report|pdf|file|page|section|part [a-z0-9]|question \d+)\b/i.test(q)
+  ) {
+    dimensions.add('document');
+    sources.add('selected_document');
+  }
+  if (
+    /\b(task|todo|overdue|deadline|workload|focus|what do i need to do|what should i do|how much time|spend on it|next step|prioriti[sz])\b/i.test(
+      q,
+    )
+  ) {
+    dimensions.add('workspace');
+    dimensions.add('task');
+    sources.add('workspace');
+  }
+  if (/\b(remind(?:er| me)?|snooze)\b/i.test(q)) {
+    dimensions.add('reminder');
+    sources.add('workspace');
+    operations.add(/\b(create|set|add|remind me|move|change)\b/i.test(q) ? 'action' : 'retrieve');
+  }
+  if (/\b(calendar|schedule|meeting|free|available time|plan my day|plan my week)\b/i.test(q)) {
+    dimensions.add('calendar');
+    sources.add('workspace');
+  }
+  if (
+    /\b(buy|shop|shopping|laptop|product|price|cost|recommend|deal|specification|ram)\b/i.test(q)
+  ) {
+    dimensions.add('shopping');
+    sources.add('current_external');
+  }
+  if (/\b(shop|store|restaurant|cafe|near me|in lahore|in karachi|where can i)\b/i.test(q)) {
+    dimensions.add('local');
+    sources.add('local_search');
+  }
+  if (/\b(weather|news|score|latest|current price|currently available)\b/i.test(q)) {
+    dimensions.add('current_information');
+    sources.add('current_external');
+  }
+  if (
+    /\b(explain|why|how|what is|what does|compare|meaning|understand|is this a good|which one|should i)\b/i.test(
+      q,
+    )
+  ) {
+    dimensions.add('reasoning');
+    operations.add('answer');
+  }
+  if (/\b(create|set|add|remind me|schedule|move|change|delete|complete)\b/i.test(q))
+    operations.add('action');
+  if (!dimensions.size) dimensions.add('general_knowledge');
+  if (current) dimensions.add('current_information');
+
+  const constraints = Object.fromEntries(
+    CONSTRAINT_PATTERNS.flatMap(([name, pattern]) => {
+      const match = text.match(pattern);
+      return match ? [[name, match[1] || match[0].trim()]] : [];
+    }),
+  );
+  return {
+    dimensions: [...dimensions],
+    sources: [...sources],
+    operations: [...operations],
+    constraints,
+    current,
+    mixed: dimensions.size > 1,
+  };
+}
+
 // Match references to owned resources and existing workspace operations, not general question words.
 export function classifyAssistantIntent(message, history = []) {
   const q = String(message || '').toLowerCase();
@@ -134,7 +233,16 @@ export function classifyAssistantIntent(message, history = []) {
   const explanation = /\b(explain|compare|teach|why|example|understand)\b|\bhow\b.*\bworks?\b/.test(
     q,
   );
-  return { intent: workspace ? (explanation ? 'hybrid' : 'workspace') : 'general' };
+  const plan = analyzeAssistantRequest(message, history);
+  return {
+    intent: workspace ? (explanation ? 'hybrid' : 'workspace') : 'general',
+    dimensions: plan.dimensions,
+    sources: plan.sources,
+    operations: plan.operations,
+    constraints: plan.constraints,
+    current: plan.current,
+    mixed: plan.mixed,
+  };
 }
 export const classifyQuestion = classifyAssistantIntent;
 
@@ -162,6 +270,10 @@ export async function answerWorkspaceQuestion({
       console.debug('[assistant.route]', {
         question: message,
         intent,
+        dimensions: requestPlan?.dimensions || [],
+        selectedSources: requestPlan?.sources || [],
+        constraints: requestPlan?.constraints || {},
+        currentRequest: Boolean(requestPlan?.current),
         workspaceRetrievalCalled,
         aiProviderCalled: provider !== 'none',
         conversationId,
@@ -176,6 +288,15 @@ export async function answerWorkspaceQuestion({
     ? 'Describe CBC as hiding repeated-block patterns; omit ciphertext-equality claims unless explicitly requested. CBC needs an unpredictable IV; decryption decrypts first, then XORs the previous ciphertext/IV. PKCS#7 pads aligned input too. CTR counter blocks never repeat under a key. Neither mode alone authenticates messages. Write equations in inline code or code blocks, never LaTeX. Keep the answer complete within its token budget.'
     : '';
   const intentInfo = classifyAssistantIntent(question, history);
+  const requestPlan = analyzeAssistantRequest(question, history);
+  const requestPlanPrompt = JSON.stringify({
+    dimensions: requestPlan.dimensions,
+    sources: requestPlan.sources,
+    operations: requestPlan.operations,
+    constraints: requestPlan.constraints,
+    current: requestPlan.current,
+    mixed: requestPlan.mixed,
+  });
   // An explicit selection is context for explanations, not a reason to turn shopping
   // or unrelated factual questions into document searches.
   const explicitDocument = /\b(document|assignment|file|section|uploaded)\b/i.test(question);
@@ -188,10 +309,19 @@ export async function answerWorkspaceQuestion({
       /\b(?:what is|what are|explain|how does|how do)\s+(?:aes|vpn|blockchain|photosynthesis|the capital of france)\b/i.test(
         question,
       ));
-  const explicitWorkspace = !explicitDocument && /\b(tasks?|reminders?|focus on today|workload|calendar|schedule)\b/i.test(question);
-  const useSelectedDocument = Boolean(selectedDocumentId) && !independentKnowledge && !explicitWorkspace;
+  const explicitWorkspace =
+    !explicitDocument &&
+    /\b(tasks?|reminders?|focus on today|workload|calendar|schedule)\b/i.test(question);
+  const useSelectedDocument =
+    Boolean(selectedDocumentId) && !independentKnowledge && !explicitWorkspace;
   const documentConversation = useSelectedDocument && isSelectedDocumentConversation(question);
   const intent = useSelectedDocument ? 'hybrid' : intentInfo.intent;
+  const mixedWorkspaceEvidence =
+    useSelectedDocument &&
+    requestPlan.dimensions.some((dimension) =>
+      ['task', 'reminder', 'calendar', 'workspace'].includes(dimension),
+    ) &&
+    (explicitDocument || /\b(based on|according to|from)\b/i.test(question));
 
   if (containsSensitiveInformation(question) || containsCredentials(question)) {
     logDebugRoute({ intent: 'sensitive', provider: 'none', evidenceFound: false });
@@ -210,9 +340,12 @@ export async function answerWorkspaceQuestion({
 
   if (intent === 'general') {
     const answerPlan = responseGuidance(question, false);
+    const activeContextInstruction = useSelectedDocument
+      ? 'A document is actively selected for this conversation.'
+      : 'No document is currently selected. Treat earlier document discussion as historical only; do not use, mention, or attribute information to that document unless the current question explicitly refers to it.';
     const result = await generate({
-      systemPrompt: `${GENERAL_ASSISTANT_PROMPT}\n${TECHNICAL_ANSWER_GUIDANCE}`,
-      userPrompt: `<workspace_context>\nNone\n</workspace_context>\n\n<conversation_context>\nNone\n</conversation_context>\n\n<recent_conversation>\n${
+      systemPrompt: `${GENERAL_ASSISTANT_PROMPT}\n${FALLBACK_ANSWER_GUIDANCE}\n${TECHNICAL_ANSWER_GUIDANCE}\n${activeContextInstruction}`,
+      userPrompt: `<request_plan>${requestPlanPrompt}</request_plan>\n\n<workspace_context>\nNone\n</workspace_context>\n\n<conversation_context>\nNone\n</conversation_context>\n\n<recent_conversation>\n${
         history
           .slice(-8)
           .map((item) => `${item.role}: ${String(item.content).slice(0, 800)}`)
@@ -260,7 +393,15 @@ export async function answerWorkspaceQuestion({
   const workspaceIntent = classifyWorkspaceQuery(message);
   const conversationContext = await buildConversationContext({
     userId,
-    history: useSelectedDocument ? history.map(item => ({ ...item, sources: (item.sources || []).filter(source => source.type === 'document' && String(source.sourceId) === String(selectedDocumentId)) })) : history,
+    history: useSelectedDocument
+      ? history.map((item) => ({
+          ...item,
+          sources: (item.sources || []).filter(
+            (source) =>
+              source.type === 'document' && String(source.sourceId) === String(selectedDocumentId),
+          ),
+        }))
+      : history,
     now: date?.now,
   });
   const contextUsed =
@@ -273,6 +414,10 @@ export async function answerWorkspaceQuestion({
     );
   workspaceRetrievalCalled = true;
   let retrieval;
+  let workspaceEvidence = null;
+  if (mixedWorkspaceEvidence) {
+    workspaceEvidence = await retrieve({ userId, message, date });
+  }
   if (useSelectedDocument) {
     const documentQuery = documentConversation
       ? `document overview requirements purpose sections questions topics ${history
@@ -300,8 +445,21 @@ export async function answerWorkspaceQuestion({
             },
           ]
         : [],
-      metadata: { kind: 'semantic_documents', selectedDocumentId, documentConversation },
+      metadata: {
+        kind: 'semantic_documents',
+        selectedDocumentId,
+        documentConversation,
+        ...(mixedWorkspaceEvidence ? { combinedSources: ['selected_document', 'workspace'] } : {}),
+      },
     };
+    if (workspaceEvidence) {
+      retrieval.context = `${retrieval.context}\n\n[Verified workspace context]\n${workspaceEvidence.context || workspaceEvidence.answer || 'No matching workspace information was found.'}`;
+      retrieval.sources = [...(retrieval.sources || []), ...(workspaceEvidence.sources || [])];
+      retrieval.metadata = {
+        ...retrieval.metadata,
+        workspaceKind: workspaceEvidence.metadata?.kind,
+      };
+    }
   } else retrieval = await retrieve({ userId, message, date });
   const sources = dedupeSources(retrieval.sources || []);
   const navigation = await resolveNavigationAction({
@@ -398,10 +556,10 @@ export async function answerWorkspaceQuestion({
     retrieval.context || retrieval.answer || 'No matching workspace information was found.';
 
   const result = await generate({
-    systemPrompt: `${WORKSPACE_ASSISTANT_PROMPT}\n${useSelectedDocument ? SELECTED_DOCUMENT_CONTEXT_PROMPT : ''}\n${TECHNICAL_ANSWER_GUIDANCE}\n${MEMORY_PROMPT}`,
-    userPrompt: `<saved_memories>\n${memories.context || 'None'}\n</saved_memories>\n\n<workspace_context>\n${promptWorkspaceContext}\n</workspace_context>\n\n<conversation_context>\n${contextForPrompt(conversationContext)}\n</conversation_context>\n\n<recent_conversation>\n${boundedHistory || 'None'}\n</recent_conversation>\n\nCurrent date: ${retrieval.metadata?.today || date?.today || ''}\nUser question: ${message}\n\n${answerPlan.instruction} ${technicalCheck} Use Markdown only when it improves clarity. For technical explanations, use a symbolic formula when useful; do not invent document values, requirements, or examples.`,
+    systemPrompt: `${WORKSPACE_ASSISTANT_PROMPT}\n${FALLBACK_ANSWER_GUIDANCE}\n${useSelectedDocument ? SELECTED_DOCUMENT_CONTEXT_PROMPT : ''}\n${TECHNICAL_ANSWER_GUIDANCE}\n${MEMORY_PROMPT}`,
+    userPrompt: `<request_plan>${requestPlanPrompt}</request_plan>\n\n<saved_memories>\n${memories.context || 'None'}\n</saved_memories>\n\n<workspace_context>\n${promptWorkspaceContext}\n</workspace_context>\n\n<conversation_context>\n${contextForPrompt(conversationContext)}\n</conversation_context>\n\n<recent_conversation>\n${boundedHistory || 'None'}\n</recent_conversation>\n\nCurrent date: ${retrieval.metadata?.today || date?.today || ''}\nUser question: ${message}\n\n${answerPlan.instruction} ${technicalCheck} Use Markdown only when it improves clarity. For technical explanations, use a symbolic formula when useful; do not invent document values, requirements, or examples. Treat current_external or local_search as unavailable unless verified evidence is supplied; never present general knowledge as current availability, price, stock, opening hours, or local fact.`,
     temperature: retrieval.kind === 'semantic_documents' ? 0.12 : 0.18,
-      maxTokens: answerPlan.maxTokens,
+    maxTokens: answerPlan.maxTokens,
   });
 
   const answer = (typeof result?.text === 'string' ? result.text : '')
@@ -430,7 +588,14 @@ export async function answerWorkspaceQuestion({
     answer: formatAnswer(usingLabel, answer),
     sources: contextualSources,
     actions: actionsForSources(contextualSources),
-    metadata: { ...retrieval.metadata, ...contextMetadata, sourceLabel: usingLabel },
+    metadata: {
+      ...retrieval.metadata,
+      ...contextMetadata,
+      sourceLabel: usingLabel,
+      routeDimensions: requestPlan.dimensions,
+      routeSources: requestPlan.sources,
+      mixedRequest: requestPlan.mixed,
+    },
     ...contextMetadata,
     model: result.model || '',
     providerCall: true,
