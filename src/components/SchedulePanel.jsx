@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import {
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Clock3,
+  Globe2,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import { Button, Field } from './UI';
 import { schedulingService as service } from '../services/schedulingService';
 import { useApp } from '../context/AppContext';
@@ -112,11 +122,16 @@ export default function SchedulePanel() {
     <section className="panel schedule-panel" aria-label="Smart scheduling">
       <div className="schedule-panel-header">
         <div>
-          <p className="eyebrow">Smart scheduling</p>
+          <div className="schedule-title-row">
+            <span className="schedule-title-icon">
+              <CalendarClock size={17} />
+            </span>
+            <p className="eyebrow">Smart scheduling</p>
+          </div>
           <h2>Plan your time</h2>
         </div>
         <div className="schedule-status-badge">
-          {saved ? `Timezone · ${saved.timezone}` : 'Set availability'}
+          <Globe2 size={14} /> {saved ? saved.timezone : zone}
         </div>
       </div>
       <p className="schedule-panel-subtitle">
@@ -137,7 +152,13 @@ export default function SchedulePanel() {
         <div className="schedule-card">
           <details open={!saved}>
             <summary>
-              Availability {saved ? `(${saved.timezone})` : '— save before scheduling'}
+              <span className="schedule-summary-label">
+                <Clock3 size={16} />
+                <span>
+                  <strong>Availability</strong>
+                  <small>{saved ? saved.timezone : 'Set your working hours'}</small>
+                </span>
+              </span>
             </summary>
             <form
               className="modal-form"
@@ -240,7 +261,15 @@ export default function SchedulePanel() {
 
         <div className="schedule-card">
           <details>
-            <summary>Tasks and duration estimates ({selected.length || 'all'} selected)</summary>
+            <summary>
+              <span className="schedule-summary-label">
+                <ClipboardList size={16} />
+                <span>
+                  <strong>Tasks &amp; duration estimates</strong>
+                  <small>{selected.length ? `${selected.length} selected` : 'All selected'}</small>
+                </span>
+              </span>
+            </summary>
             <p>Durations are total work estimates. Existing blocks count toward this total.</p>
             {tasks.length ? (
               tasks.map((t) => (
@@ -297,35 +326,46 @@ export default function SchedulePanel() {
         </div>
       </div>
 
-      <div className="schedule-toolbar schedule-planner-toolbar">
-        <Field label="Planning period">
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
-            <option value={1}>Today</option>
-            <option value={7}>Next 7 days</option>
-            <option value={14}>Next 14 days</option>
-            <option value={31}>Next 31 days</option>
-          </select>
-        </Field>
-        <label className="schedule-toggle">
-          <input type="checkbox" checked={useAi} onChange={(e) => setUseAi(e.target.checked)} />
-          AI estimates and explanation
-        </label>
-        <Button
-          disabled={busy || !saved || !tasks.length}
-          onClick={() =>
-            perform(async () => {
-              const p = await service.suggest({
-                days,
-                useAi,
-                ...(selected.length ? { taskIds: selected } : {}),
-              });
-              setPreview(p);
-              setParams({ proposal: p._id });
-            })
-          }
-        >
-          {busy ? 'Working…' : 'Suggest schedule'}
-        </Button>
+      <div className="schedule-planning">
+        <div className="schedule-planning-heading">
+          <span className="schedule-summary-label">
+            <Sparkles size={16} />
+            <span>
+              <strong>Schedule planning</strong>
+              <small>Let AI find the best time for your work</small>
+            </span>
+          </span>
+        </div>
+        <div className="schedule-toolbar schedule-planner-toolbar">
+          <Field label="Planning period">
+            <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+              <option value={1}>Today</option>
+              <option value={7}>Next 7 days</option>
+              <option value={14}>Next 14 days</option>
+              <option value={31}>Next 31 days</option>
+            </select>
+          </Field>
+          <label className="schedule-toggle">
+            <input type="checkbox" checked={useAi} onChange={(e) => setUseAi(e.target.checked)} />
+            AI estimates and explanation
+          </label>
+          <Button
+            disabled={busy || !saved || !tasks.length}
+            onClick={() =>
+              perform(async () => {
+                const p = await service.suggest({
+                  days,
+                  useAi,
+                  ...(selected.length ? { taskIds: selected } : {}),
+                });
+                setPreview(p);
+                setParams({ proposal: p._id });
+              })
+            }
+          >
+            {busy ? 'Working…' : 'Suggest schedule'}
+          </Button>
+        </div>
       </div>
 
       {proposal && (
@@ -433,9 +473,15 @@ export default function SchedulePanel() {
 
       <div className="schedule-card schedule-calendar-card">
         <div className="schedule-card-head">
-          <h3>Your scheduled blocks</h3>
+          <h3>
+            <span className="schedule-section-icon">
+              <CalendarClock size={16} />
+            </span>
+            Your scheduled blocks
+          </h3>
           <div className="schedule-toolbar compact-toolbar">
             <Button variant="secondary" onClick={() => setDate(schedulingDay(date, -view))}>
+              <ChevronLeft size={14} />
               Previous
             </Button>
             <input
@@ -448,6 +494,7 @@ export default function SchedulePanel() {
             />
             <Button variant="secondary" onClick={() => setDate(schedulingDay(date, view))}>
               Next
+              <ChevronRight size={14} />
             </Button>
             <select
               aria-label="Calendar view"
@@ -463,8 +510,21 @@ export default function SchedulePanel() {
 
         <div className={`schedule-agenda ${view === 1 ? 'single-day' : ''}`}>
           {Array.from({ length: view }, (_, i) => schedulingDay(date, i)).map((day) => (
-            <section key={day}>
-              <h4>{day}</h4>
+            <section className="schedule-date-card" key={day}>
+              <h4>
+                <strong>
+                  {new Date(`${day}T12:00:00`).toLocaleDateString(undefined, {
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </strong>
+                <small>
+                  {events.filter((b) => schedulingLocal(b.startTime, zone).slice(0, 10) === day)
+                    .length
+                    ? `${events.filter((b) => schedulingLocal(b.startTime, zone).slice(0, 10) === day).length} block${events.filter((b) => schedulingLocal(b.startTime, zone).slice(0, 10) === day).length === 1 ? '' : 's'}`
+                    : 'No blocks'}
+                </small>
+              </h4>
               {events
                 .filter(
                   (b) =>
@@ -528,7 +588,15 @@ export default function SchedulePanel() {
 
       <div className="schedule-card busyness-card">
         <details>
-          <summary>Add busy time (meeting or personal)</summary>
+          <summary>
+            <span className="schedule-summary-label">
+              <Plus size={16} />
+              <span>
+                <strong>Add busy time (meeting or personal)</strong>
+                <small>Protect time from future suggestions</small>
+              </span>
+            </span>
+          </summary>
           <form
             className="modal-form"
             onSubmit={(e) => {
