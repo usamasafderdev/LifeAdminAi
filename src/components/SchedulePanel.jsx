@@ -16,7 +16,7 @@ export default function SchedulePanel() {
   const [profile, setProfile] = useState(defaultProfile);
   const [saved, setSaved] = useState(null);
   const { tasks: allTasks, updateTask, reloadTasks, reloadReminders } = useApp();
-  const tasks = allTasks.filter(task => ['Pending', 'In Progress'].includes(task.status));
+  const tasks = allTasks.filter((task) => ['Pending', 'In Progress'].includes(task.status));
   const [selected, setSelected] = useState([]);
   const [proposal, setProposal] = useState(null);
   const [blocks, setBlocks] = useState([]);
@@ -51,7 +51,8 @@ export default function SchedulePanel() {
   };
   useEffect(() => {
     let active = true;
-    service.availability()
+    service
+      .availability()
       .then((p) => {
         if (!active) return;
         if (p) {
@@ -109,169 +110,194 @@ export default function SchedulePanel() {
   };
   return (
     <section className="panel schedule-panel" aria-label="Smart scheduling">
-      <h2>Plan your time</h2>
-      <p>Choose available hours, review a suggested plan, then accept it to reserve time.</p>
+      <div className="schedule-panel-header">
+        <div>
+          <p className="eyebrow">Smart scheduling</p>
+          <h2>Plan your time</h2>
+        </div>
+        <div className="schedule-status-badge">
+          {saved ? `Timezone · ${saved.timezone}` : 'Set availability'}
+        </div>
+      </div>
+      <p className="schedule-panel-subtitle">
+        Choose available hours, review a suggested plan, then accept it to reserve time.
+      </p>
       {error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
-      <details open={!saved}>
-        <summary>Availability {saved ? `(${saved.timezone})` : '— save before scheduling'}</summary>
-        <form
-          className="modal-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            perform(async () => {
-              const p = await service.saveAvailability(profile);
-              setSaved(p);
-              setProfile(p);
-              setNotice('Availability saved.');
-            });
-          }}
-        >
-          <Field label="Timezone">
-            <input
-              value={profile.timezone}
-              onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
-              placeholder="Asia/Karachi"
-              required
-            />
-          </Field>
-          <fieldset>
-            <legend>Available days</legend>
-            <div className="schedule-days">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
-                <label key={day}>
-                  <input
-                    type="checkbox"
-                    checked={profile.workingDays.includes(i)}
-                    onChange={(e) =>
-                      setProfile({
-                        ...profile,
-                        workingDays: e.target.checked
-                          ? [...profile.workingDays, i]
-                          : profile.workingDays.filter((d) => d !== i),
-                      })
-                    }
-                  />
-                  {day}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          {profile.availableTimeRanges.map((range, i) => (
-            <div className="schedule-toolbar" key={i}>
-              {['start', 'end'].map((field) => (
-                <Field label={field === 'start' ? 'From' : 'Until'} key={field}>
-                  <input
-                    aria-label={`Range ${i + 1} ${field}`}
-                    type="time"
-                    value={range[field]}
-                    required
-                    onChange={(e) =>
-                      setProfile({
-                        ...profile,
-                        availableTimeRanges: profile.availableTimeRanges.map((r, j) =>
-                          i === j ? { ...r, [field]: e.target.value } : r,
-                        ),
-                      })
-                    }
-                  />
-                </Field>
-              ))}
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() =>
-                  setProfile({
-                    ...profile,
-                    availableTimeRanges: profile.availableTimeRanges.filter((_, j) => j !== i),
-                  })
-                }
-              >
-                Remove range
-              </Button>
-            </div>
-          ))}
-          <div className="schedule-toolbar">
-            <Button
-              variant="secondary"
-              type="button"
-              disabled={profile.availableTimeRanges.length >= 8}
-              onClick={() =>
-                setProfile({
-                  ...profile,
-                  availableTimeRanges: [
-                    ...profile.availableTimeRanges,
-                    { start: '09:00', end: '12:00' },
-                  ],
-                })
-              }
+      {notice && (
+        <p className="schedule-notice" role="status">
+          {notice}
+        </p>
+      )}
+
+      <div className="schedule-card-group">
+        <div className="schedule-card">
+          <details open={!saved}>
+            <summary>
+              Availability {saved ? `(${saved.timezone})` : '— save before scheduling'}
+            </summary>
+            <form
+              className="modal-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                perform(async () => {
+                  const p = await service.saveAvailability(profile);
+                  setSaved(p);
+                  setProfile(p);
+                  setNotice('Availability saved.');
+                });
+              }}
             >
-              Add hours
-            </Button>
-            <Button disabled={busy}>Save availability</Button>
-          </div>
-        </form>
-      </details>
-      <details>
-        <summary>Tasks and duration estimates ({selected.length || 'all'} selected)</summary>
-        <p>Durations are total work estimates. Existing blocks count toward this total.</p>
-        {tasks.length ? (
-          tasks.map((t) => (
-            <div className="schedule-task" key={t.id}>
-              <label>
+              <Field label="Timezone">
                 <input
-                  type="checkbox"
-                  checked={selected.includes(t.id)}
-                  onChange={(e) =>
-                    setSelected((ids) =>
-                      e.target.checked ? [...ids, t.id] : ids.filter((id) => id !== t.id),
-                    )
+                  value={profile.timezone}
+                  onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
+                  placeholder="Asia/Karachi"
+                  required
+                />
+              </Field>
+              <fieldset>
+                <legend>Available days</legend>
+                <div className="schedule-days">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
+                    <label key={day}>
+                      <input
+                        type="checkbox"
+                        checked={profile.workingDays.includes(i)}
+                        onChange={(e) =>
+                          setProfile({
+                            ...profile,
+                            workingDays: e.target.checked
+                              ? [...profile.workingDays, i]
+                              : profile.workingDays.filter((d) => d !== i),
+                          })
+                        }
+                      />
+                      {day}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              {profile.availableTimeRanges.map((range, i) => (
+                <div className="schedule-toolbar" key={i}>
+                  {['start', 'end'].map((field) => (
+                    <Field label={field === 'start' ? 'From' : 'Until'} key={field}>
+                      <input
+                        aria-label={`Range ${i + 1} ${field}`}
+                        type="time"
+                        value={range[field]}
+                        required
+                        onChange={(e) =>
+                          setProfile({
+                            ...profile,
+                            availableTimeRanges: profile.availableTimeRanges.map((r, j) =>
+                              i === j ? { ...r, [field]: e.target.value } : r,
+                            ),
+                          })
+                        }
+                      />
+                    </Field>
+                  ))}
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() =>
+                      setProfile({
+                        ...profile,
+                        availableTimeRanges: profile.availableTimeRanges.filter((_, j) => j !== i),
+                      })
+                    }
+                  >
+                    Remove range
+                  </Button>
+                </div>
+              ))}
+              <div className="schedule-toolbar">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={profile.availableTimeRanges.length >= 8}
+                  onClick={() =>
+                    setProfile({
+                      ...profile,
+                      availableTimeRanges: [
+                        ...profile.availableTimeRanges,
+                        { start: '09:00', end: '12:00' },
+                      ],
+                    })
                   }
-                />
-                {t.title}{' '}
-                <small>
-                  {t.priority} · {t.due}
-                </small>
-              </label>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const value = new FormData(e.currentTarget).get('minutes');
-                  perform(async () => {
-                    await updateTask(t.id, {
-                      estimatedDuration: value ? Number(value) : null,
-                    });
-                    setNotice('Duration saved. Generate a new preview to use it.');
-                  });
-                }}
-              >
-                <input
-                  aria-label={`Minutes for ${t.title}`}
-                  name="minutes"
-                  type="number"
-                  min="1"
-                  max="2400"
-                  step="1"
-                  placeholder="Auto estimate"
-                  defaultValue={t.estimatedDuration || ''}
-                />
-                <Button variant="secondary" disabled={busy}>
-                  Save minutes
+                >
+                  Add hours
                 </Button>
-              </form>
-            </div>
-          ))
-        ) : (
-          <p>
-            Create tasks on the <Link to="/app/tasks">Tasks page</Link> first.
-          </p>
-        )}
-      </details>
-      <div className="schedule-toolbar">
+                <Button disabled={busy}>Save availability</Button>
+              </div>
+            </form>
+          </details>
+        </div>
+
+        <div className="schedule-card">
+          <details>
+            <summary>Tasks and duration estimates ({selected.length || 'all'} selected)</summary>
+            <p>Durations are total work estimates. Existing blocks count toward this total.</p>
+            {tasks.length ? (
+              tasks.map((t) => (
+                <div className="schedule-task" key={t.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(t.id)}
+                      onChange={(e) =>
+                        setSelected((ids) =>
+                          e.target.checked ? [...ids, t.id] : ids.filter((id) => id !== t.id),
+                        )
+                      }
+                    />
+                    {t.title}{' '}
+                    <small>
+                      {t.priority} · {t.due}
+                    </small>
+                  </label>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const value = new FormData(e.currentTarget).get('minutes');
+                      perform(async () => {
+                        await updateTask(t.id, {
+                          estimatedDuration: value ? Number(value) : null,
+                        });
+                        setNotice('Duration saved. Generate a new preview to use it.');
+                      });
+                    }}
+                  >
+                    <input
+                      aria-label={`Minutes for ${t.title}`}
+                      name="minutes"
+                      type="number"
+                      min="1"
+                      max="2400"
+                      step="1"
+                      placeholder="Auto estimate"
+                      defaultValue={t.estimatedDuration || ''}
+                    />
+                    <Button variant="secondary" disabled={busy}>
+                      Save minutes
+                    </Button>
+                  </form>
+                </div>
+              ))
+            ) : (
+              <p>
+                Create tasks on the <Link to="/app/tasks">Tasks page</Link> first.
+              </p>
+            )}
+          </details>
+        </div>
+      </div>
+
+      <div className="schedule-toolbar schedule-planner-toolbar">
         <Field label="Planning period">
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={1}>Today</option>
@@ -280,7 +306,7 @@ export default function SchedulePanel() {
             <option value={31}>Next 31 days</option>
           </select>
         </Field>
-        <label>
+        <label className="schedule-toggle">
           <input type="checkbox" checked={useAi} onChange={(e) => setUseAi(e.target.checked)} />
           AI estimates and explanation
         </label>
@@ -301,8 +327,9 @@ export default function SchedulePanel() {
           {busy ? 'Working…' : 'Suggest schedule'}
         </Button>
       </div>
+
       {proposal && (
-        <section className="schedule-preview">
+        <section className="schedule-preview schedule-card">
           <h3>Suggested schedule · {proposal.status}</h3>
           <p>
             {new Set(blocks.map((b) => b.relatedTaskId)).size} tasks ·{' '}
@@ -403,132 +430,143 @@ export default function SchedulePanel() {
           )}
         </section>
       )}
-      <h3>Your scheduled blocks</h3>
-      <div className="schedule-toolbar">
-        <Button variant="secondary" onClick={() => setDate(schedulingDay(date, -view))}>
-          Previous
-        </Button>
-        <input
-          aria-label="Schedule start date"
-          type="date"
-          value={date}
-          onChange={(e) => {
-            if (e.target.value) setDate(e.target.value);
-          }}
-        />
-        <Button variant="secondary" onClick={() => setDate(schedulingDay(date, view))}>
-          Next
-        </Button>
-        <select
-          aria-label="Calendar view"
-          value={view}
-          onChange={(e) => setView(Number(e.target.value))}
-        >
-          <option value={1}>Daily view</option>
-          <option value={7}>Weekly view</option>
-        </select>
-        <span>{zone}</span>
-      </div>
-      <div className={`schedule-agenda ${view === 1 ? 'single-day' : ''}`}>
-        {Array.from({ length: view }, (_, i) => schedulingDay(date, i)).map((day) => (
-          <section key={day}>
-            <h4>{day}</h4>
-            {events
-              .filter(
-                (b) =>
-                  schedulingLocal(b.startTime, zone).slice(0, 10) <= day &&
-                  schedulingLocal(new Date(new Date(b.endTime) - 1), zone).slice(0, 10) >= day,
-              )
-              .map((b) => (
-                <article key={b._id}>
-                  <strong>{b.title}</strong>
-                  <time>
-                    {schedulingLocal(b.startTime, zone).slice(11)} –{' '}
-                    {schedulingLocal(b.endTime, zone).slice(11)}
-                  </time>
-                  <small>
-                    {b.type.replace('_', ' ')} · {b.status}
-                  </small>
-                  {b.relatedTaskId && (
-                    <Link to={`/app/tasks?task=${b.relatedTaskId}`}>Open task</Link>
-                  )}
-                  {b.status === 'planned' && (
-                    <div>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(async () => {
-                            await service.change(b._id, 'completed');
-                            await Promise.all([reloadTasks(), reloadReminders()]);
-                            setSelected(ids => ids.filter(id => id !== String(b.relatedTaskId)));
-                            setPreview(null);
-                            window.dispatchEvent(new Event('lifeadmin-briefing-changed'));
-                            await loadEvents();
-                          })
-                        }
-                      >
-                        {b.relatedTaskId ? 'Complete task' : 'Complete block'}
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          perform(async () => {
-                            await service.change(b._id, 'cancelled');
-                            await loadEvents();
-                          })
-                        }
-                      >
-                        Cancel block
-                      </button>
-                    </div>
-                  )}
-                </article>
-              ))}
-            {!events.some((b) => schedulingLocal(b.startTime, zone).slice(0, 10) === day) && (
-              <p>No blocks starting today.</p>
-            )}
-          </section>
-        ))}
-      </div>
-      <details>
-        <summary>Add busy time (meeting or personal)</summary>
-        <form
-          className="modal-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget,
-              fields = new FormData(form);
-            perform(async () => {
-              await service.create({
-                title: fields.get('title'),
-                type: fields.get('type'),
-                startTime: schedulingInstant(fields.get('start'), zone),
-                endTime: schedulingInstant(fields.get('end'), zone),
-              });
-              form.reset();
-              await loadEvents();
-              setNotice('Busy time added. Future suggestions will avoid it.');
-            });
-          }}
-        >
-          <Field label="Title">
-            <input name="title" maxLength="200" required />
-          </Field>
-          <Field label="Type">
-            <select name="type">
-              <option value="meeting">Meeting</option>
-              <option value="personal">Personal</option>
+
+      <div className="schedule-card schedule-calendar-card">
+        <div className="schedule-card-head">
+          <h3>Your scheduled blocks</h3>
+          <div className="schedule-toolbar compact-toolbar">
+            <Button variant="secondary" onClick={() => setDate(schedulingDay(date, -view))}>
+              Previous
+            </Button>
+            <input
+              aria-label="Schedule start date"
+              type="date"
+              value={date}
+              onChange={(e) => {
+                if (e.target.value) setDate(e.target.value);
+              }}
+            />
+            <Button variant="secondary" onClick={() => setDate(schedulingDay(date, view))}>
+              Next
+            </Button>
+            <select
+              aria-label="Calendar view"
+              value={view}
+              onChange={(e) => setView(Number(e.target.value))}
+            >
+              <option value={1}>Daily view</option>
+              <option value={7}>Weekly view</option>
             </select>
-          </Field>
-          <Field label={`Start (${zone})`}>
-            <input name="start" type="datetime-local" required />
-          </Field>
-          <Field label={`End (${zone})`}>
-            <input name="end" type="datetime-local" required />
-          </Field>
-          <Button disabled={busy || !saved}>Add busy time</Button>
-        </form>
-      </details>
+            <span className="schedule-zone-label">{zone}</span>
+          </div>
+        </div>
+
+        <div className={`schedule-agenda ${view === 1 ? 'single-day' : ''}`}>
+          {Array.from({ length: view }, (_, i) => schedulingDay(date, i)).map((day) => (
+            <section key={day}>
+              <h4>{day}</h4>
+              {events
+                .filter(
+                  (b) =>
+                    schedulingLocal(b.startTime, zone).slice(0, 10) <= day &&
+                    schedulingLocal(new Date(new Date(b.endTime) - 1), zone).slice(0, 10) >= day,
+                )
+                .map((b) => (
+                  <article key={b._id}>
+                    <strong>{b.title}</strong>
+                    <time>
+                      {schedulingLocal(b.startTime, zone).slice(11)} –{' '}
+                      {schedulingLocal(b.endTime, zone).slice(11)}
+                    </time>
+                    <small>
+                      {b.type.replace('_', ' ')} · {b.status}
+                    </small>
+                    {b.relatedTaskId && (
+                      <Link to={`/app/tasks?task=${b.relatedTaskId}`}>Open task</Link>
+                    )}
+                    {b.status === 'planned' && (
+                      <div>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            perform(async () => {
+                              await service.change(b._id, 'completed');
+                              await Promise.all([reloadTasks(), reloadReminders()]);
+                              setSelected((ids) =>
+                                ids.filter((id) => id !== String(b.relatedTaskId)),
+                              );
+                              setPreview(null);
+                              window.dispatchEvent(new Event('lifeadmin-briefing-changed'));
+                              await loadEvents();
+                            })
+                          }
+                        >
+                          {b.relatedTaskId ? 'Complete task' : 'Complete block'}
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            perform(async () => {
+                              await service.change(b._id, 'cancelled');
+                              await loadEvents();
+                            })
+                          }
+                        >
+                          Cancel block
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              {!events.some((b) => schedulingLocal(b.startTime, zone).slice(0, 10) === day) && (
+                <p className="schedule-empty-day">No blocks starting today.</p>
+              )}
+            </section>
+          ))}
+        </div>
+      </div>
+
+      <div className="schedule-card busyness-card">
+        <details>
+          <summary>Add busy time (meeting or personal)</summary>
+          <form
+            className="modal-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const form = e.currentTarget,
+                fields = new FormData(form);
+              perform(async () => {
+                await service.create({
+                  title: fields.get('title'),
+                  type: fields.get('type'),
+                  startTime: schedulingInstant(fields.get('start'), zone),
+                  endTime: schedulingInstant(fields.get('end'), zone),
+                });
+                form.reset();
+                await loadEvents();
+                setNotice('Busy time added. Future suggestions will avoid it.');
+              });
+            }}
+          >
+            <Field label="Title">
+              <input name="title" maxLength="200" required />
+            </Field>
+            <Field label="Type">
+              <select name="type">
+                <option value="meeting">Meeting</option>
+                <option value="personal">Personal</option>
+              </select>
+            </Field>
+            <Field label={`Start (${zone})`}>
+              <input name="start" type="datetime-local" required />
+            </Field>
+            <Field label={`End (${zone})`}>
+              <input name="end" type="datetime-local" required />
+            </Field>
+            <Button disabled={busy || !saved}>Add busy time</Button>
+          </form>
+        </details>
+      </div>
     </section>
   );
 }

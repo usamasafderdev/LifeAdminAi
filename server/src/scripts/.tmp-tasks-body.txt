@@ -1,0 +1,56 @@
+  await Task.deleteMany({userId});
+  await Document.updateOne({_id:document._id},{$set:{title:'Cryptography assignment'}});
+  const seeded=await Task.create([
+    {userId,documentId:document._id,title:'Complete CTR Mode Decryption Diagram',description:'Draw the complete decryption diagram and verify each step using the supplied counter values.',status:'completed',source:'ai_confirmed',dueDate:new Date('2026-09-24T12:00:00Z')},
+    {userId,documentId:document._id,title:'Complete CBC Mode Decryption Diagram',description:'Explain the chaining process and include the initialization vector.',status:'completed',source:'ai_confirmed'},
+    {userId,documentId:document._id,title:'Review the assignment references',description:'Check that every reference supports the submitted work.',status:'completed',source:'ai_confirmed'},
+    {userId,title:'Buy a cricket bat',description:'Visit a sports shop and compare sizes before choosing.',status:'completed',source:'manual',dueDate:new Date('2026-09-17T12:00:00Z')}
+  ]);
+  await cdp('Page.navigate',{url:'http://127.0.0.1:5199/login'});
+  await waitFor(()=>evaluate("location.origin === 'http://127.0.0.1:5199'"),'origin');
+  await evaluate(`localStorage.setItem('la_token',${JSON.stringify(account.token)})`);
+  const url='http://127.0.0.1:5199/app/tasks';await cdp('Page.navigate',{url});
+  await waitFor(()=>evaluate("document.querySelectorAll('.task-lane').length === 4 && !!document.querySelector('.task-group-card')"),'Tasks ready');
+  const input=async(selector,value)=>{await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});const proto=e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));})()`);await pause(90);};
+  const shot=async(name)=>{const r=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(path.join(profile,name+'.png'),Buffer.from(r.data,'base64'));};
+  const action=async(title,label)=>{await evaluate(`document.querySelector('summary[aria-label='+CSS.escape(${JSON.stringify('Actions for '+title)})+']').click()`);await pause(70);await evaluate(`document.querySelector('button[aria-label='+CSS.escape(${JSON.stringify(label+' '+title)})+']').click()`);};
+  for(const width of [1600,1024,390]){
+    await cdp('Emulation.setDeviceMetricsOverride',{width,height:1100,deviceScaleFactor:1,mobile:width<600});await pause(150);await evaluate('scrollTo(0,0)');
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),'Page fits '+width);
+    assert.ok(await evaluate("[...document.querySelectorAll('.task-lane')].every(e=>e.getBoundingClientRect().width>=275)"),'Readable lanes '+width);
+    await shot('tasks-'+width);
+    if(width===390){await evaluate("document.querySelector('.lane-green').scrollIntoView({block:'start'})");await shot('tasks-completed-mobile');}
+  }
+  await cdp('Emulation.setDeviceMetricsOverride',{width:1600,height:1100,deviceScaleFactor:1,mobile:false});
+  assert.equal(await evaluate("document.querySelectorAll('.task-lane-empty').length"),3);
+  await click('View all tasks');await pause(80);assert.equal(await evaluate("document.querySelectorAll('.task-group-item').length"),3);
+  await click('Collapse');await pause(80);assert.equal(await evaluate("document.querySelectorAll('.task-group-item').length"),2);
+  await evaluate("document.querySelector('[aria-label=\"Reopen Complete CTR Mode Decryption Diagram\"]').click()");
+  await waitFor(async()=> (await Task.findById(seeded[0]._id)).status==='pending','Reopen persisted');
+  await waitFor(()=>evaluate("!!document.querySelector('[aria-label=\"Complete Complete CTR Mode Decryption Diagram\"]')"),'Reopen visible');
+  await evaluate("document.querySelector('[aria-label=\"Complete Complete CTR Mode Decryption Diagram\"]').click()");
+  await waitFor(async()=> (await Task.findById(seeded[0]._id)).status==='completed','Complete persisted');
+  await input('.task-toolbar input','Cryptography');assert.ok(await evaluate("!document.querySelector('.kanban-task') && !!document.querySelector('.task-group-card')"));
+  await input('.task-toolbar input','no matching title');assert.ok(await evaluate("!document.querySelector('.task-group-card')"));await input('.task-toolbar input','');
+  await input('select[aria-label="Source"]','Personal');assert.equal(await evaluate("document.querySelectorAll('.kanban-task').length"),1);await input('select[aria-label="Source"]','All');
+  await input('select[aria-label="Sort tasks"]','Due date');await input('select[aria-label="Sort tasks"]','Priority');await input('select[aria-label="Sort tasks"]','Newest');
+  await click('New Task');await waitFor(()=>evaluate("!!document.querySelector('input[name=title]')"),'New task form');
+  await input('input[name=title]','UX verification task');await input('textarea[name=description]','Confirm the task workflow still works.');await input('select[name=priorityOverride]','HIGH');await click('Save task');
+  await waitFor(async()=>!!await Task.findOne({userId,title:'UX verification task'}),'Create persisted');
+  await waitFor(()=>evaluate("[...document.querySelectorAll('.kanban-task-title')].some(e=>e.textContent.includes('UX verification task'))"),'Create visible');
+  await input('select[aria-label="Priority"]','HIGH');assert.equal(await evaluate("document.querySelectorAll('.kanban-task').length"),1);await input('select[aria-label="Priority"]','All');
+  await action('UX verification task','Edit');await waitFor(()=>evaluate("!!document.querySelector('select[name=status]')"),'Edit opens');await input('select[name=status]','In Progress');await click('Save task');
+  await waitFor(()=>evaluate("document.querySelector('.lane-amber').textContent.includes('UX verification task')"),'Edited status moves lane');
+  await click('In Progress');await pause(80);assert.equal(await evaluate("document.querySelectorAll('.kanban-task').length"),1);await click('All');await pause(80);
+  await action('UX verification task','Set reminder for');await waitFor(()=>evaluate("!!document.querySelector('input[name=time]')"),'Reminder form');await click('Create reminder');await waitFor(async()=>!!await Reminder.findOne({userId,title:'UX verification task'}),'Reminder persisted');
+  await action('UX verification task','Delete');await click('Delete task');await waitFor(async()=>!await Task.exists({userId,title:'UX verification task'}),'Delete persisted');
+  await cdp('Page.reload');await waitFor(()=>evaluate("document.querySelectorAll('.task-lane-empty').length===3"),'Refresh preserves tasks');
+  console.log('PASS task create/edit/delete/reminder, complete/reopen, search/source/priority/sort/status, group expand/collapse and refresh');
+  const realRows=await Task.find({userId:{$ne:userId}}).sort({updatedAt:-1}).limit(16).lean();
+  if(realRows.length){
+    await Task.deleteMany({userId}); const docMap=new Map();
+    for(const row of realRows){let linked=null;if(row.documentId){const key=String(row.documentId);if(!docMap.has(key)){const original=await Document.findById(row.documentId).select('title category').lean();const copy=await Document.create({userId,title:original?.title||'Document assignment',category:original?.category||'other',sourceType:'text'});docMap.set(key,copy._id);}linked=docMap.get(key);}
+      await Task.create({userId,documentId:linked,title:row.title,description:row.description,status:row.status,source:row.source,dueDate:row.dueDate,priorityOverride:row.priorityOverride});}
+    await cdp('Page.reload');await waitFor(()=>evaluate("!!document.querySelector('.task-kanban')"),'Existing data copies');await pause(200);await shot('tasks-existing-records');console.log('PASS rendered '+realRows.length+' isolated copies of existing task records');
+  }
+  assert.deepEqual(browserErrors,[]);console.log('PASS desktop/tablet/mobile overflow and browser runtime checks');console.log('Screenshots: '+profile);
