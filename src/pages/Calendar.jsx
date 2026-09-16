@@ -1,5 +1,12 @@
 import { useApp } from '../context/AppContext';
-import { BellRing, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  BellRing,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -100,19 +107,6 @@ export default function Calendar() {
       <PageHeader
         title="Calendar"
         description="Plan your time, review scheduled work, and track deadlines."
-        action={
-          <div className="calendar-nav">
-            <Button variant="secondary" onClick={() => move(-1)}>
-              <ChevronLeft />
-            </Button>
-            <strong className="month-label">
-              {first.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-            </strong>
-            <Button variant="secondary" onClick={() => move(1)}>
-              <ChevronRight />
-            </Button>
-          </div>
-        }
       />
       <div className="calendar-shell">
         <SchedulePanel />
@@ -122,30 +116,51 @@ export default function Calendar() {
               <p className="eyebrow">Timeline</p>
               <h2>Task deadlines and reminders</h2>
             </div>
-            <div className="calendar-legend">
-              <span>
-                <i className="task" />
-                Task due date
-              </span>
-              <span>
-                <i className="reminder" />
-                Reminder
-              </span>
-            </div>
           </header>
 
           <div className="calendar-summary-row">
-            <div className="calendar-summary-card">
-              <span>Due this month</span>
-              <strong>{monthSummary.taskCount}</strong>
+            <div className="calendar-summary-card calendar-summary-task">
+              <span className="calendar-summary-icon"><CalendarDays size={16} /></span>
+              <div>
+                <strong>{monthSummary.taskCount}</strong>
+                <b>Task deadlines</b>
+                <small>Due this month</small>
+              </div>
             </div>
-            <div className="calendar-summary-card">
-              <span>Reminders</span>
-              <strong>{monthSummary.reminderCount}</strong>
+            <div className="calendar-summary-card calendar-summary-reminder">
+              <span className="calendar-summary-icon"><BellRing size={16} /></span>
+              <div>
+                <strong>{monthSummary.reminderCount}</strong>
+                <b>Reminders</b>
+                <small>This month</small>
+              </div>
             </div>
-            <div className="calendar-summary-card">
-              <span>Scheduled items</span>
-              <strong>{monthSummary.eventCount}</strong>
+            <div className="calendar-summary-card calendar-summary-scheduled">
+              <span className="calendar-summary-icon"><CheckCircle2 size={16} /></span>
+              <div>
+                <strong>{monthSummary.eventCount}</strong>
+                <b>Scheduled items</b>
+                <small>Across your calendar</small>
+              </div>
+            </div>
+          </div>
+
+          <div className="calendar-toolbar">
+            <div className="calendar-month-toolbar">
+              <Button variant="secondary" onClick={() => move(-1)} aria-label="Previous month">
+                <ChevronLeft size={15} />
+                <span>Previous</span>
+              </Button>
+              <strong>{first.toLocaleString(undefined, { month: 'long', year: 'numeric' })}</strong>
+              <Button variant="secondary" onClick={() => move(1)} aria-label="Next month">
+                <span>Next</span>
+                <ChevronRight size={15} />
+              </Button>
+            </div>
+            <div className="calendar-view-switcher" aria-label="Calendar view">
+              <button className="active" type="button" aria-current="page">Month</button>
+              <button type="button" disabled title="Week view is available in Smart Scheduling">Week</button>
+              <button type="button" disabled title="Day view is available in Smart Scheduling">Day</button>
             </div>
           </div>
 
@@ -179,13 +194,18 @@ export default function Calendar() {
                         .slice(0, 4)
                         .map((event) => (
                           <button
-                            className={`cal-event calendar-${event.type} ${(event.priority || 'medium').toLowerCase()}`}
+                            className={`cal-event calendar-${event.type} ${(event.priority || 'medium').toLowerCase()} ${event.status === 'completed' ? 'completed' : ''}`}
                             key={`${event.type}-${event.id}`}
                             onClick={() => setSelected(event)}
                           >
                             <i />
                             {event.type === 'reminder' && <BellRing size={10} />}
-                            {event.title}
+                            <span className="cal-event-title">{event.title}</span>
+                            <small>
+                              {event.type === 'task' ? 'Task' : 'Reminder'}
+                              {event.priority ? ` · ${event.priority}` : ''}
+                              {event.type === 'reminder' && event.date ? ` · ${new Date(event.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : ''}
+                            </small>
                           </button>
                         ))}
                     </div>
@@ -198,6 +218,12 @@ export default function Calendar() {
                   <span>No task deadlines or active reminders this month.</span>
                 </div>
               )}
+              <div className="calendar-legend">
+                <span><i className="task" />Task due date</span>
+                <span><i className="reminder" />Reminder</span>
+                <span><i className="completed" />Completed</span>
+                <span><i className="today" />Today</span>
+              </div>
               <section className="calendar-mobile-list">
                 {events.map((event) => (
                   <button key={`${event.type}-${event.id}`} onClick={() => setSelected(event)}>
