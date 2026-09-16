@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Field } from './UI';
 import { schedulingService as service } from '../services/schedulingService';
-import { taskService } from '../services/taskService';
+import { useApp } from '../context/AppContext';
 import { getErrorMessage } from '../services/api';
 import { schedulingDay, schedulingInstant, schedulingLocal } from '../utils/schedulingDates';
 
@@ -15,7 +15,8 @@ export default function SchedulePanel() {
   const [params, setParams] = useSearchParams();
   const [profile, setProfile] = useState(defaultProfile);
   const [saved, setSaved] = useState(null);
-  const [tasks, setTasks] = useState([]);
+  const { tasks: allTasks, updateTask, reloadTasks, reloadReminders } = useApp();
+  const tasks = allTasks.filter(task => ['Pending', 'In Progress'].includes(task.status));
   const [selected, setSelected] = useState([]);
   const [proposal, setProposal] = useState(null);
   const [blocks, setBlocks] = useState([]);
@@ -50,15 +51,14 @@ export default function SchedulePanel() {
   };
   useEffect(() => {
     let active = true;
-    Promise.all([service.availability(), taskService.getAll()])
-      .then(([p, t]) => {
+    service.availability()
+      .then((p) => {
         if (!active) return;
         if (p) {
           setSaved(p);
           setProfile(p);
           setDate(schedulingLocal(new Date(), p.timezone).slice(0, 10));
         }
-        setTasks(t.filter((task) => ['Pending', 'In Progress'].includes(task.status)));
       })
       .catch((e) => {
         if (active) setError(getErrorMessage(e));
@@ -96,7 +96,7 @@ export default function SchedulePanel() {
     return () => {
       request.current++;
     };
-  }, [date, view, zone]);
+  }, [date, view, zone, allTasks]);
   const pending = proposal?.status === 'pending' && new Date(proposal.expiresAt) > new Date();
   const editTime = (index, field, value) => {
     try {
@@ -242,10 +242,9 @@ export default function SchedulePanel() {
                   e.preventDefault();
                   const value = new FormData(e.currentTarget).get('minutes');
                   perform(async () => {
-                    const updated = await taskService.update(t.id, {
+                    await updateTask(t.id, {
                       estimatedDuration: value ? Number(value) : null,
                     });
-                    setTasks((rows) => rows.map((row) => (row.id === t.id ? updated : row)));
                     setNotice('Duration saved. Generate a new preview to use it.');
                   });
                 }}
@@ -460,11 +459,15 @@ export default function SchedulePanel() {
                         onClick={() =>
                           perform(async () => {
                             await service.change(b._id, 'completed');
+                            await Promise.all([reloadTasks(), reloadReminders()]);
+                            setSelected(ids => ids.filter(id => id !== String(b.relatedTaskId)));
+                            setPreview(null);
+                            window.dispatchEvent(new Event('lifeadmin-briefing-changed'));
                             await loadEvents();
                           })
                         }
                       >
-                        Complete block
+                        {b.relatedTaskId ? 'Complete task' : 'Complete block'}
                       </button>
                       <button
                         disabled={busy}

@@ -13,7 +13,7 @@ function normalizeProviderError(error) {
   if (status === 429) {
     return new AiError(AI_ERROR_CODES.RATE_LIMITED, { statusCode: 429, cause: error });
   }
-  if (errorName === 'APIConnectionTimeoutError' || error?.code === 'ETIMEDOUT') {
+  if (status === 408 || errorName === 'APIConnectionTimeoutError' || error?.code === 'ETIMEDOUT') {
     return new AiError(AI_ERROR_CODES.TIMEOUT, { statusCode: 504, cause: error });
   }
   if (status >= 500 || errorName === 'APIConnectionError') {
@@ -32,11 +32,13 @@ export async function generateWithGroq({
   jsonSchema,
   client: suppliedClient,
 }) {
-  const client = suppliedClient || new Groq({
-    apiKey: config.apiKey,
-    timeout: config.timeoutMs,
-    maxRetries: 0,
-  });
+  const client =
+    suppliedClient ||
+    new Groq({
+      apiKey: config.apiKey,
+      timeout: config.timeoutMs,
+      maxRetries: 0,
+    });
 
   const request = {
     model: config.model,
@@ -46,17 +48,20 @@ export async function generateWithGroq({
     ],
     temperature,
     max_completion_tokens: maxTokens,
-    ...(config.model.startsWith('openai/gpt-oss-') ? {
-      reasoning_effort: 'low',
-      include_reasoning: false,
-    } : {}),
+    ...(config.model.startsWith('openai/gpt-oss-')
+      ? {
+          reasoning_effort: 'low',
+          include_reasoning: false,
+        }
+      : {}),
   };
 
   try {
     // LifeAdmin parses and validates the JSON response itself. Avoiding a
     // provider response-format constraint prevents model-specific 400s.
     const response = await client.chat.completions.create(request);
-    const text = response?.choices?.[0]?.message?.content?.trim() || '';
+    const content = response?.choices?.[0]?.message?.content;
+    const text = typeof content === 'string' ? content.trim() : '';
     if (!text) throw new AiError(AI_ERROR_CODES.INVALID_RESPONSE, { statusCode: 502 });
 
     const usage = response.usage

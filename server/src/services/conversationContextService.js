@@ -4,7 +4,7 @@ import Task from '../models/Task.js';
 import { applyTaskPriority } from './taskPriorityService.js';
 
 const DATE_PATTERN = /\b(?:20\d{2}-\d{1,2}-\d{1,2}|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?)\b/gi;
-const CONTEXT_REFERENCE = /\b(?:this|that|these|those|it|them|one|ones|previous|mentioned|above|the)\b/i;
+const CONTEXT_REFERENCE = /\b(?:this|that|these|those|it|them|previous|mentioned|above)\b|\bthe\s+(?:document|assignment|file|task|reminder|first|second|third|last|former|latter)\b|\b(?:which|that|this)\s+ones?\b/i;
 
 function uniqueIds(history, type) {
   const seen = new Set(); const ids = [];
@@ -27,10 +27,11 @@ export function usesConversationContext(message) {
 
 export async function buildConversationContext({ userId, history = [], now = new Date() }) {
   const bounded = history.slice(-8);
+  const documentIds = uniqueIds(bounded, 'document'), taskIds = uniqueIds(bounded, 'task'), reminderIds = uniqueIds(bounded, 'reminder');
   const [documents, rawTasks, reminders] = await Promise.all([
-    Document.find({ userId, _id: { $in: uniqueIds(bounded, 'document') } }).select('title').lean(),
-    Task.find({ userId, _id: { $in: uniqueIds(bounded, 'task') } }).select('title priority priorityOverride calculatedPriority priorityScore dueDate status documentId').lean(),
-    Reminder.find({ userId, _id: { $in: uniqueIds(bounded, 'reminder') } }).select('title remindAt status').lean(),
+    documentIds.length ? Document.find({ userId, _id: { $in: documentIds } }).select('title').lean() : [],
+    taskIds.length ? Task.find({ userId, _id: { $in: taskIds } }).select('title priority priorityOverride calculatedPriority priorityScore dueDate status documentId').lean() : [],
+    reminderIds.length ? Reminder.find({ userId, _id: { $in: reminderIds } }).select('title remindAt status').lean() : [],
   ]);
   const tasks = rawTasks.map((task) => applyTaskPriority(task, { now }));
   const mentionedDates = [...new Set(bounded.flatMap((item) => String(item.content || '').match(DATE_PATTERN) || []).map((item) => item.toLowerCase()))].slice(-5);

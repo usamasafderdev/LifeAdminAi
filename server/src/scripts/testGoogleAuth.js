@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import app from '../app.js';
 import { connectDB } from '../config/db.js';
 import User from '../models/User.js';
-import { GoogleCredentialError, setGoogleVerifierForTests } from '../utils/googleAuth.js';
+import { GoogleCredentialError, normalizeGoogleVerificationError, setGoogleVerifierForTests } from '../utils/googleAuth.js';
 
 process.env.NODE_ENV = 'test';
 
@@ -29,6 +29,7 @@ async function run() {
     await User.deleteMany({ email: { $in: [NEW_EMAIL, LINKED_EMAIL, UNVERIFIED_EMAIL] } });
 
     setGoogleVerifierForTests(async (credential) => {
+      if (credential === 'certificates-unavailable') throw normalizeGoogleVerificationError(new Error('Failed to retrieve verification certificates: private network details'));
       if (!payloads[credential]) throw new GoogleCredentialError('Rejected test credential');
       return payloads[credential];
     });
@@ -48,6 +49,10 @@ async function run() {
 
     check((await post('/api/auth/google', {})).status === 400, 'Google missing credential');
     check((await post('/api/auth/google', { credential: 'invalid' })).status === 401, 'Google invalid credential');
+
+    const unavailable = await post('/api/auth/google', { credential: 'certificates-unavailable' });
+    check(unavailable.status === 503 && /temporarily unavailable/.test(unavailable.body.message) && !JSON.stringify(unavailable.body).includes('private network details'), 'Google certificate outage returns safe 503');
+    check(normalizeGoogleVerificationError(new Error('Invalid token signature')) instanceof GoogleCredentialError, 'Invalid signature remains rejected');
 
     const created = await post('/api/auth/google', { credential: 'valid-new' });
     check(created.status === 200 && created.body.success && created.body.token, 'Google new user');

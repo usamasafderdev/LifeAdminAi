@@ -16,10 +16,14 @@ export function useNotificationData(userId) {
   const current = useRef(userId);
   current.current = userId;
   const generation = useRef(0);
+  const inFlight = useRef(null);
+  const mutations = useRef(new Set());
   const reload = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || mutations.current.size) return;
+    if (inFlight.current?.owner === userId && inFlight.current.version === generation.current) return inFlight.current.promise;
     const version = ++generation.current;
     setLoading(true);
+    const promise = (async () => {
     try {
       const data = await notificationService.list();
       if (current.current === userId && generation.current === version) {
@@ -32,11 +36,15 @@ export function useNotificationData(userId) {
     } finally {
       if (current.current === userId && generation.current === version) setLoading(false);
     }
+    })();
+    inFlight.current = { owner: userId, version, promise };
+    try { await promise; } finally { if (inFlight.current?.promise === promise) inFlight.current = null; }
   }, [userId]);
   useEffect(() => {
     setState({ owner: userId, ...empty });
     setError('');
     setLoading(false);
+    mutations.current.clear();
     localStorage.removeItem('la_notifications');
     if (!userId) return;
     reload();
@@ -65,6 +73,8 @@ export function useNotificationData(userId) {
         ...previous,
         notifications: nextNotifications,
         unreadCount: Math.max(previous.unreadCount - 1, 0),
+        importantCount: previous.importantNotifications.some(item => String(item._id) === String(id)) ? Math.max(previous.importantCount - 1, 0) : previous.importantCount,
+        importantNotifications: previous.importantNotifications.filter(item => String(item._id) !== String(id)),
       };
     });
   };
@@ -100,14 +110,21 @@ export function useNotificationData(userId) {
       };
     });
   };
-  const mutate = async (operation, optimistic) => {
+  const mutate = async (key, operation, optimistic) => {
+    if (mutations.current.has(key) || current.current !== userId) return;
+    mutations.current.add(key);
+    generation.current++;
     optimistic?.();
     try {
       await operation();
-      if (current.current === userId) await reload();
     } catch (error) {
-      setError(getErrorMessage(error, 'Unable to update notifications.'));
-      await reload();
+      if (current.current === userId) setError(getErrorMessage(error, 'Unable to update notifications.'));
+      throw error;
+    } finally {
+      if (current.current === userId) {
+        mutations.current.delete(key);
+        if (!mutations.current.size) await reload();
+      }
     }
   };
   const data = state.owner === userId ? state : empty;
@@ -118,13 +135,15 @@ export function useNotificationData(userId) {
     reloadNotifications: reload,
     markNotificationRead: (id) =>
       mutate(
+        `read:${id}`,
         () => notificationService.read(id),
         () => withImmediateReadUpdate(id),
       ),
     markAllNotificationsRead: () =>
-      mutate(() => notificationService.readAll(), withImmediateAllReadUpdate),
+      mutate('readAll', () => notificationService.readAll(), withImmediateAllReadUpdate),
     deleteNotification: (id) =>
       mutate(
+        `delete:${id}`,
         () => notificationService.remove(id),
         () => withImmediateDeleteUpdate(id),
       ),

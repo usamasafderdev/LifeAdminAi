@@ -38,5 +38,15 @@ const schema = new mongoose.Schema(
   { timestamps: true },
 );
 
+schema.add({
+  conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', default: null },
+  requestId: String,
+  status: { type: String, enum: ['pending', 'complete', 'failed'], default: 'complete' },
+});
+schema.index({ userId: 1, conversationId: 1, createdAt: 1, _id: 1 });
+schema.index(
+  { userId: 1, conversationId: 1, requestId: 1, role: 1 },
+  { unique: true, partialFilterExpression: { requestId: { $type: 'string' } } },
+);
 schema.index({ userId: 1, documentId: 1, createdAt: 1 });
 export default mongoose.models.DocumentChatMessage || mongoose.model('DocumentChatMessage', schema);

@@ -5,10 +5,14 @@ export function normalizeGeminiError(error) {
   if (error instanceof AiError) return error;
   const status = Number(error?.status || error?.statusCode || error?.code);
   const text = `${error?.name || ''} ${error?.message || ''}`;
-  if (status === 401 || status === 403) return new AiError(AI_ERROR_CODES.AUTHENTICATION_FAILED, { statusCode: 502, cause: error });
-  if (status === 429 || /resource.?exhausted|rate.?limit/i.test(text)) return new AiError(AI_ERROR_CODES.RATE_LIMITED, { statusCode: 429, cause: error });
-  if (status === 408 || /timeout|timed out|abort/i.test(text)) return new AiError(AI_ERROR_CODES.TIMEOUT, { statusCode: 504, cause: error });
-  if (status >= 500 || /unavailable|connection/i.test(text)) return new AiError(AI_ERROR_CODES.PROVIDER_UNAVAILABLE, { statusCode: 503, cause: error });
+  if (status === 401 || status === 403)
+    return new AiError(AI_ERROR_CODES.AUTHENTICATION_FAILED, { statusCode: 502, cause: error });
+  if (status === 429 || /resource.?exhausted|rate.?limit/i.test(text))
+    return new AiError(AI_ERROR_CODES.RATE_LIMITED, { statusCode: 429, cause: error });
+  if (status === 408 || /timeout|timed out|abort/i.test(text))
+    return new AiError(AI_ERROR_CODES.TIMEOUT, { statusCode: 504, cause: error });
+  if (status >= 500 || /unavailable|connection/i.test(text))
+    return new AiError(AI_ERROR_CODES.PROVIDER_UNAVAILABLE, { statusCode: 503, cause: error });
   return new AiError(AI_ERROR_CODES.REQUEST_FAILED, { statusCode: 502, cause: error });
 }
 
@@ -31,11 +35,19 @@ export async function generateWithGemini({
       },
     });
 
-    const responseObject = await model.generateContent(userPrompt);
+    const responseObject = await model.generateContent(userPrompt, { timeout: config.timeoutMs });
     const response = responseObject?.response || responseObject;
-    const text = typeof response?.text === 'function'
-      ? String(response.text() || '').trim()
-      : String(response?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join('') || response?.text || '').trim();
+    const parts = response?.candidates?.[0]?.content?.parts;
+    const rawText =
+      typeof response?.text === 'function'
+        ? response.text()
+        : Array.isArray(parts)
+          ? parts
+              .filter((part) => typeof part?.text === 'string')
+              .map((part) => part.text)
+              .join('')
+          : response?.text;
+    const text = typeof rawText === 'string' ? rawText.trim() : '';
 
     if (!text) {
       throw new AiError(AI_ERROR_CODES.INVALID_RESPONSE, { statusCode: 502 });
@@ -45,7 +57,11 @@ export async function generateWithGemini({
     return {
       text,
       provider: 'gemini',
-      model: responseObject?.modelVersion || response?.modelVersion || config.geminiModel || 'gemini-2.5-flash',
+      model:
+        responseObject?.modelVersion ||
+        response?.modelVersion ||
+        config.geminiModel ||
+        'gemini-2.5-flash',
       usage: usage
         ? {
             inputTokens: usage.promptTokenCount ?? null,

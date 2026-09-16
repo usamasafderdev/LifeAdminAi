@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -80,6 +81,20 @@ export default function NotificationCenter() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const container = useRef(null);
+  const popup = useRef(null);
+  const [position, setPosition] = useState({ top: 70, left: 12, width: 420 });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = container.current.getBoundingClientRect();
+      const width = Math.min(420, window.innerWidth - 24);
+      setPosition({ top: rect.bottom + 12, left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)), width });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open]);
   const sorted = useMemo(() => {
     return [...(app.notifications || [])]
       .sort((a, b) => {
@@ -95,7 +110,7 @@ export default function NotificationCenter() {
         setOpen(false);
         return;
       }
-      if (event.type === 'pointerdown' && !container.current?.contains(event.target)) {
+      if (event.type === 'pointerdown' && !container.current?.contains(event.target) && !popup.current?.contains(event.target)) {
         setOpen(false);
       }
     };
@@ -121,8 +136,10 @@ export default function NotificationCenter() {
           <b className="notif-count">{app.unreadCount > 99 ? '99+' : app.unreadCount}</b>
         )}
       </IconButton>
-      {open && (
+      {open && createPortal(
         <section
+          ref={popup}
+          style={{ ...position, maxHeight: `calc(100dvh - ${position.top + 12}px)` }}
           className="notification-pop notification-center"
           aria-label="Notifications"
         >
@@ -181,7 +198,7 @@ export default function NotificationCenter() {
               View all notifications
             </Link>
           </footer>
-        </section>
+        </section>, document.body
       )}
     </div>
   );

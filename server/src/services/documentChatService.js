@@ -2,12 +2,14 @@ import { retrieveMemories, markMemoriesUsed, MEMORY_PROMPT } from './memoryServi
 import {
   retrieveDocumentKnowledge,
   selectKnowledgeContext,
-  NOT_FOUND,
+  NOT_FOUND as KNOWLEDGE_NOT_FOUND,
 } from './documentKnowledgeService.js';
 import { splitKnowledgeChunks } from './documentChunkingService.js';
 import { generateText } from './ai/aiService.js';
 import { getDocumentChatConfig } from './documentChatContextService.js';
 import { detectChatIntent } from './documentGenerationService.js';
+
+export const DOCUMENT_NOT_FOUND = 'I could not find this information in the document.';
 
 export const DOCUMENT_CHAT_SYSTEM_PROMPT = `You are LifeAdmin, an intelligent document-aware assistant. First understand what the user is actually asking. Use the selected document as evidence for document-specific questions, but do not merely repeat retrieved text. Answer the question immediately and concisely by default. Expand only when the user asks for detail or detail is genuinely necessary.
 
@@ -141,19 +143,27 @@ export async function answerDocumentQuestion({
         config,
       );
   if (!selected.chunks.length)
-    return { answer: NOT_FOUND, model: '', sources: [], context: '', responseMode: plan.mode };
+    return {
+      answer: DOCUMENT_NOT_FOUND,
+      model: '',
+      sources: [],
+      context: '',
+      responseMode: plan.mode,
+    };
   const boundedHistory = history
     .slice(-config.maxHistoryMessages)
     .map((message) => `${message.role}: ${String(message.content).slice(0, 1000)}`)
     .join('\n');
-  const memories = document.userId ? await retrieveMemories(document.userId, question) : { context: '', ids: [] };
+  const memories = document.userId
+    ? await retrieveMemories(document.userId, question)
+    : { context: '', ids: [] };
   const result = await generate({
     systemPrompt: `${DOCUMENT_CHAT_SYSTEM_PROMPT}\n${MEMORY_PROMPT}`,
     userPrompt: `<saved_memories>\n${memories.context || 'None'}\n</saved_memories>\n\nDocument title: ${document.title}\n\n<document_context>\n${selected.context}\n</document_context>\n\n<recent_conversation>\n${boundedHistory || 'None'}\n</recent_conversation>\n\nUser request: ${question}\n\nResponse mode: ${plan.mode}. ${plan.guidance}`,
     temperature: plan.temperature,
     maxTokens: plan.maxTokens,
   });
-  const answer = String(result.text || '')
+  const answer = (typeof result?.text === 'string' ? result.text : '')
     .replace(/\0/g, '')
     .replace(/\[Chunk (\d+)\]/gi, (citation, index) =>
       selected.chunks.some((chunk) => chunk.chunkIndex + 1 === Number(index)) ? citation : '',
@@ -171,7 +181,7 @@ export async function answerDocumentQuestion({
     answer,
     model: result.model || '',
     sources:
-      answer === NOT_FOUND
+      answer === DOCUMENT_NOT_FOUND || answer === KNOWLEDGE_NOT_FOUND
         ? []
         : selected.chunks.map(({ chunkIndex, label, page, revision }) => ({
             documentId: document._id,

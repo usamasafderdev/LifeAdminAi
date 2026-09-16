@@ -1,3 +1,4 @@
+import conversationRoutes from './routes/conversationRoutes.js';
 import cors from 'cors';
 import express from 'express';
 import mongoose from 'mongoose';
@@ -13,6 +14,8 @@ import memoryRoutes from './routes/memoryRoutes.js';
 import briefingRoutes from './routes/briefingRoutes.js';
 import calendarRoutes from './routes/calendarRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import settingsRoutes from './routes/settingsRoutes.js';
+import privacyRoutes from './routes/privacyRoutes.js';
 
 const app = express();
 
@@ -39,10 +42,13 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/assistant', assistantRoutes);
+app.use('/api/conversations', conversationRoutes);
 app.use('/api/memories', memoryRoutes);
 app.use('/api/briefings', briefingRoutes);
 app.use('/api/schedule', calendarRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/privacy', privacyRoutes);
 app.use('/api', integrationRoutes);
 
 app.use(notFound);

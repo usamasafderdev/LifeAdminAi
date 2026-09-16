@@ -1,13 +1,15 @@
 import { MemoryIndicator, MemorySuggestions } from '../components/MemoryControls';
 import { Bell, CheckCircle2, FileText, Send, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button, ConfirmDialog, PageHeader, Skeleton } from '../components/UI';
 import { assistantService } from '../services/assistantService';
+import { chatError as safeError } from '../services/chatError';
 import { getErrorMessage } from '../services/api';
 import { documentService } from '../services/documentService';
+import { useApp } from '../context/AppContext';
 
 const prompts = [
   'What should I focus on today?',
@@ -16,16 +18,6 @@ const prompts = [
   'Summarize my current workload.',
   'What documents did I add recently?',
 ];
-const safeError = (error) => {
-  const status = error.response?.status;
-  if (status === 429) return 'AI usage limits are temporarily reached. Please try again shortly.';
-  if (status === 502) return 'The AI response could not be processed. Please try again.';
-  if (status === 503) return 'LifeAdmin AI is temporarily unavailable. Please try again shortly.';
-  if (status === 504) return 'The AI response took too long. Please try again.';
-  if (!error.response) return 'Unable to reach the LifeAdmin server.';
-  return getErrorMessage(error, 'LifeAdmin could not answer this question.');
-};
-
 function AssistantActions({ actions, onAction }) {
   const groups = [
     { type: 'open_schedule', title: 'Schedule', icon: CheckCircle2, hint: 'Review on Calendar' },
@@ -78,7 +70,17 @@ const documentIntent = (text = '') =>
   /(create|write|draft|generate|docx|pdf|markdown|report|document)/i.test(String(text));
 
 export function AskLifeAdmin() {
+  const { documents, documentsLoading, documentsError, reloadDocuments } = useApp();
   const nav = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const conversationId = params.get('conversation') || '';
+  const [conversations, setConversations] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const preserveScroll = useRef(false);
+  const activeConversation = useRef(conversationId);
+  activeConversation.current = conversationId;
   const endRef = useRef(null);
   const submittingRef = useRef(false);
   const [messages, setMessages] = useState([]);
@@ -90,49 +92,158 @@ export function AskLifeAdmin() {
   const [clearing, setClearing] = useState(false);
   const [docStatus, setDocStatus] = useState('');
   const [generatedDoc, setGeneratedDoc] = useState(null);
+  const [selectingDocument, setSelectingDocument] = useState(false);
+  const [showDocumentPicker, setShowDocumentPicker] = useState(false);
+  const selectedDocumentId =
+    conversations.find((chat) => chat._id === conversationId)?.documentId || '';
+  const selectedDocument = documents.find((doc) => doc.id === selectedDocumentId);
+  const selectedDocumentName =
+    selectedDocument?.title || selectedDocument?.originalFilename || 'Selected document';
+  const recentDocuments = [...documents]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 20);
+  if (selectedDocument && !recentDocuments.some((doc) => doc.id === selectedDocumentId))
+    recentDocuments.unshift(selectedDocument);
+  const chooseDocument = async (documentId) => {
+    if (submittingRef.current || selectingDocument) return;
+    setSelectingDocument(true);
+    setError('');
+    try {
+      let id = conversationId;
+      if (!id) id = (await assistantService.create())._id;
+      const updated = await assistantService.selectDocument(id, documentId || null);
+      setConversations((items) => [updated, ...items.filter((chat) => chat._id !== id)]);
+      if (id !== conversationId) setParams({ conversation: id });
+      setShowDocumentPicker(false);
+    } catch (err) {
+      setError(safeError(err));
+    } finally {
+      setSelectingDocument(false);
+    }
+  };
+  const startDocumentChat = () => setShowDocumentPicker(true);
+  const startGeneralChat = () => {
+    if (!conversationId) return newChat();
+    if (selectedDocumentId) return chooseDocument('');
+    setShowDocumentPicker(false);
+  };
   useEffect(() => {
     let active = true;
-    assistantService
-      .history()
-      .then((items) => {
-        if (active) setMessages(items);
-      })
-      .catch((requestError) => {
-        if (active) setError(getErrorMessage(requestError, 'Unable to load your conversation.'));
-      })
-      .finally(() => {
+    setLoading(true);
+    setMessages([]);
+    setHasMore(false);
+    setError('');
+    (async () => {
+      try {
+        const items = await assistantService.conversations();
+        if (!active) return;
+        setConversations(items);
+        if (!conversationId) {
+          if (items[0]) setParams({ conversation: items[0]._id }, { replace: true });
+          return;
+        }
+        const history = await assistantService.history(conversationId);
+        if (active) {
+          setMessages(history.messages);
+          setHasMore(history.hasMore);
+        }
+      } catch (err) {
+        if (active) setError(safeError(err));
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [conversationId, historyRetry]);
   useEffect(() => {
+    const clearChat = () => {
+      setMessages([]);
+      setConversations([]);
+      setHasMore(false);
+      setParams({}, { replace: true });
+    };
+    window.addEventListener('lifeadmin-chat-cleared', clearChat);
+    return () => window.removeEventListener('lifeadmin-chat-cleared', clearChat);
+  }, [setParams]);
+  useEffect(() => {
+    if (preserveScroll.current) {
+      preserveScroll.current = false;
+      return;
+    }
     endRef.current?.scrollIntoView({ block: 'nearest' });
   }, [messages, thinking]);
+  const newChat = async () => {
+    if (submittingRef.current || loading) return;
+    setLoading(true);
+    try {
+      const chat = await assistantService.create();
+      setParams({ conversation: chat._id });
+    } catch (err) {
+      setError(safeError(err));
+      setLoading(false);
+    }
+  };
+  const loadOlder = async () => {
+    setOlderLoading(true);
+    const container = endRef.current?.parentElement;
+    const height = container?.scrollHeight || 0;
+    try {
+      const result = await assistantService.history(conversationId, messages[0]?.id);
+      if (activeConversation.current !== conversationId) return;
+      preserveScroll.current = true;
+      setMessages((items) => [...result.messages, ...items]);
+      setHasMore(result.hasMore);
+      requestAnimationFrame(() => {
+        if (container) container.scrollTop += container.scrollHeight - height;
+      });
+    } catch (err) {
+      setError(safeError(err));
+    } finally {
+      setOlderLoading(false);
+    }
+  };
   const send = async (value, retryId = '') => {
     const text = (value || input).trim();
-    if (!text || submittingRef.current) return;
+    if (
+      !text ||
+      submittingRef.current ||
+      loading ||
+      clearing ||
+      selectingDocument ||
+      !conversationId
+    )
+      return;
     submittingRef.current = true;
     setThinking(true);
     setError('');
     setInput('');
-    const pending = { id: `pending-${Date.now()}`, role: 'user', text };
+    const requestId =
+      (retryId && messages.find((item) => item.id === retryId)?.requestId) || crypto.randomUUID();
+    const pending = { id: `pending-${requestId}`, requestId, role: 'user', text };
     setMessages((items) =>
       retryId
-        ? items.map((item) => (item.id === retryId ? { ...item, failed: false } : item))
+        ? items.map((item) => (item.id === retryId ? { ...item, failed: false, requestId } : item))
         : [...items, pending],
     );
     try {
-      const result = await assistantService.send(text);
+      const result = await assistantService.send(text, conversationId, requestId);
+      if (activeConversation.current !== conversationId) return;
       if (result.message.memory?.saved?.length)
         window.dispatchEvent(new Event('lifeadmin-memory-changed'));
       setMessages((items) => [
-        ...items.filter((item) => item.id !== (retryId || pending.id)),
-        result.userMessage,
+        ...items
+          .filter((item) => item.id !== result.message.id)
+          .map((item) => (item.id === (retryId || pending.id) ? result.userMessage : item)),
         result.message,
       ]);
+      assistantService
+        .conversations()
+        .then(setConversations)
+        .catch(() => {});
     } catch (requestError) {
+      if (activeConversation.current !== conversationId) return;
       setMessages((items) =>
         items.map((item) =>
           item.id === (retryId || pending.id) ? { ...item, failed: true } : item,
@@ -148,7 +259,8 @@ export function AskLifeAdmin() {
     setClearing(true);
     setError('');
     try {
-      await assistantService.clear();
+      await assistantService.clear(conversationId);
+      setParams({});
       setMessages([]);
       setConfirmClear(false);
     } catch (requestError) {
@@ -203,7 +315,11 @@ export function AskLifeAdmin() {
         description="Ask LifeAdmin anything. It uses your workspace context when available and general AI knowledge when needed."
         action={
           messages.length > 0 && (
-            <Button variant="secondary" onClick={() => setConfirmClear(true)}>
+            <Button
+              variant="secondary"
+              disabled={loading || thinking || clearing}
+              onClick={() => setConfirmClear(true)}
+            >
               <Trash2 />
               Clear chat
             </Button>
@@ -211,25 +327,194 @@ export function AskLifeAdmin() {
         }
       />
       <MemoryIndicator />
+      <nav className="conversation-history panel" aria-label="Conversation history">
+        <Button variant="secondary" disabled={loading || thinking || clearing} onClick={newChat}>
+          New Chat
+        </Button>
+        <label htmlFor="recent-conversations">Recent conversations</label>
+        <select
+          id="recent-conversations"
+          value={conversationId}
+          disabled={loading || thinking || clearing}
+          onChange={(event) => setParams({ conversation: event.target.value })}
+        >
+          <option value="" disabled>
+            Select a conversation
+          </option>
+          {conversations.map((chat) => (
+            <option key={chat._id} value={chat._id}>
+              {chat.title} - {new Date(chat.updatedAt).toLocaleDateString()}
+            </option>
+          ))}
+        </select>
+      </nav>
       <section className="panel global-assistant-shell">
+        <div
+          className={`chat-context-bar ${selectedDocumentId ? 'document-active' : 'general-active'}`}
+        >
+          <span className="chat-context-icon" aria-hidden="true">
+            {selectedDocumentId ? <FileText /> : <Sparkles />}
+          </span>
+          <div className="chat-context-copy">
+            <strong>{selectedDocumentId ? 'Discussing document' : 'General conversation'}</strong>
+            <span>{selectedDocumentId ? selectedDocumentName : 'No document selected'}</span>
+            <small>{selectedDocumentId ? 'Primary context' : 'General chat'}</small>
+          </div>
+          <div className="chat-context-actions">
+            <button
+              type="button"
+              className="chat-context-action"
+              disabled={
+                loading ||
+                thinking ||
+                selectingDocument ||
+                documentsLoading ||
+                messages.some((message) => message.failed)
+              }
+              onClick={() => setShowDocumentPicker((value) => !value)}
+            >
+              {selectedDocumentId ? 'Change document' : 'Discuss a document'}
+            </button>
+            {selectedDocumentId && (
+              <button
+                type="button"
+                className="chat-context-remove"
+                disabled={
+                  thinking ||
+                  selectingDocument ||
+                  loading ||
+                  messages.some((message) => message.failed)
+                }
+                onClick={() => chooseDocument('')}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+        {showDocumentPicker && (
+          <div className="chat-document-picker">
+            <div>
+              <strong>Choose a document to discuss</strong>
+              <small>Your selection becomes the active context for this conversation.</small>
+            </div>
+            {documentsError && (
+              <button type="button" className="chat-retry" onClick={reloadDocuments}>
+                Retry document list
+              </button>
+            )}
+            {!documentsLoading && !documentsError && recentDocuments.length === 0 && (
+              <p className="chat-picker-empty">
+                Upload a document first, then return here to discuss it.
+              </p>
+            )}
+            <div className="chat-document-options">
+              {recentDocuments.map((doc) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  data-document-id={doc.id}
+                  onClick={() => chooseDocument(doc.id)}
+                  disabled={selectingDocument}
+                >
+                  <FileText aria-hidden="true" />
+                  <span>
+                    <strong>{doc.title || doc.originalFilename}</strong>
+                    <small>{doc.type || 'Document'}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {error && (
           <p className="document-chat-error" role="alert">
-            {error}
+            {error}{' '}
+            <button
+              type="button"
+              disabled={thinking || loading}
+              onClick={() => setHistoryRetry((value) => value + 1)}
+            >
+              Reload history
+            </button>
           </p>
         )}
         <div className="messages global-assistant-messages" aria-live="polite">
+          {hasMore && (
+            <button className="chat-retry" disabled={olderLoading || thinking} onClick={loadOlder}>
+              {olderLoading ? 'Loading...' : 'Load earlier messages'}
+            </button>
+          )}
           {loading && (
             <div className="assistant-loading">
               <Skeleton lines={4} />
             </div>
           )}
           {!loading && !messages.length && (
-            <div className="chat-empty">
-              <span className="ai-orbit">
-                <Sparkles />
-              </span>
-              <h2>How can I help with your workspace?</h2>
-              <p>Ask about your real tasks, deadlines, reminders, or saved documents.</p>
+            <div className="chat-empty chat-empty-welcome">
+              <span className="ai-orbit">{selectedDocumentId ? <FileText /> : <Sparkles />}</span>
+              <h2>
+                {selectedDocumentId ? `Let's discuss ${selectedDocumentName}` : 'How can I help?'}
+              </h2>
+              <p>
+                {selectedDocumentId
+                  ? 'Ask for explanations, summaries, or help working through the document step by step.'
+                  : 'Choose how you want to chat.'}
+              </p>
+              {selectedDocumentId ? (
+                <div className="chat-welcome-prompts">
+                  {[
+                    'Summarize this document',
+                    'Explain this assignment',
+                    'What do I need to do?',
+                    "Let's go through it step by step",
+                  ].map((prompt) => (
+                    <button
+                      type="button"
+                      disabled={thinking}
+                      onClick={() => send(prompt)}
+                      key={prompt}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="chat-start-options">
+                  <button type="button" onClick={startGeneralChat} disabled={loading || thinking}>
+                    <Sparkles aria-hidden="true" />
+                    <span>
+                      <strong>General question</strong>
+                      <small>Ask LifeAdmin anything.</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startDocumentChat}
+                    disabled={loading || thinking || documentsLoading}
+                  >
+                    <FileText aria-hidden="true" />
+                    <span>
+                      <strong>Discuss a document</strong>
+                      <small>Choose a document and discuss it with LifeAdmin.</small>
+                    </span>
+                  </button>
+                </div>
+              )}
+              {!selectedDocumentId && (
+                <div className="chat-general-prompts" aria-label="Suggested questions">
+                  {prompts.map((prompt) => (
+                    <button
+                      type="button"
+                      disabled={thinking}
+                      onClick={() => send(prompt)}
+                      key={prompt}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {messages.map((message) => (
@@ -337,7 +622,7 @@ export function AskLifeAdmin() {
                 <strong className="message-author">LifeAdmin</strong>
                 <div className="document-chat-markdown">
                   <p className="thinking">
-                    LifeAdmin is checking your workspace <i /> <i /> <i />
+                    LifeAdmin is thinking <i /> <i /> <i />
                   </p>
                 </div>
               </div>
@@ -345,15 +630,6 @@ export function AskLifeAdmin() {
           )}
           <div ref={endRef} />
         </div>
-        {!loading && !messages.length && (
-          <div className="suggestions global-assistant-prompts">
-            {prompts.map((prompt) => (
-              <button disabled={thinking} onClick={() => send(prompt)} key={prompt}>
-                {prompt}
-              </button>
-            ))}
-          </div>
-        )}
         <form
           className="composer document-chat-composer global-assistant-composer"
           onSubmit={(event) => {
@@ -364,7 +640,7 @@ export function AskLifeAdmin() {
           <textarea
             value={input}
             maxLength="3000"
-            disabled={loading || thinking}
+            disabled={loading || thinking || selectingDocument}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -372,7 +648,7 @@ export function AskLifeAdmin() {
                 send();
               }
             }}
-            placeholder="Ask LifeAdmin anything about your workspace..."
+            placeholder="Ask LifeAdmin a question..."
           />
           <Button disabled={loading || thinking || !input.trim()}>
             <Send />

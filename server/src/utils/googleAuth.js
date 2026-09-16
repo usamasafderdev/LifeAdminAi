@@ -4,6 +4,18 @@ let testVerifier;
 
 export class GoogleCredentialError extends Error {}
 
+export function normalizeGoogleVerificationError(error) {
+  if (/Failed to retrieve verification certificates/i.test(error?.message || '')) {
+    return Object.assign(new Error('Google sign-in is temporarily unavailable. Please try again shortly.'), {
+      code: 'GOOGLE_VERIFICATION_UNAVAILABLE',
+      statusCode: 503,
+    });
+  }
+  return Object.assign(new GoogleCredentialError('Google authentication failed'), {
+    code: 'GOOGLE_TOKEN_VERIFICATION_FAILED',
+  });
+}
+
 async function verifyWithGoogle(credential) {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const isDevelopment = process.env.NODE_ENV === 'development';
@@ -32,9 +44,7 @@ async function verifyWithGoogle(credential) {
     if (isDevelopment) {
       console.error(`[Google Auth] Verification failed (${error?.name || 'Error'}): ${error?.message || 'Unknown verification error'}`);
     }
-    const verificationError = new GoogleCredentialError('Google authentication failed');
-    verificationError.code = 'GOOGLE_TOKEN_VERIFICATION_FAILED';
-    throw verificationError;
+    throw normalizeGoogleVerificationError(error);
   }
 }
 

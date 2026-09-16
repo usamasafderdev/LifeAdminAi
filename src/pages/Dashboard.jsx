@@ -1,7 +1,7 @@
 import { ImportantAlerts } from '../components/NotificationCenter';
 import DailyBriefingCard from '../components/DailyBriefingCard';
 import { ArrowRight, BellRing, CalendarDays, Clock3, FileText, Lightbulb, ListChecks, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, CheckCircle, EmptyState, PageHeader, PriorityBadge, Skeleton } from '../components/UI';
 import { useApp } from '../context/AppContext';
@@ -13,14 +13,15 @@ import { TODAY, dueLabel } from '../utils/dates';
 const empty = { counts: { documents: 0, openTasks: 0, highPriority: 0, upcomingDeadlines: 0, upcomingReminders: 0 }, deadlineSummary: { insight: 'No deadlines fall within the next 14 days.' }, taskProgress: { total: 0, completed: 0, pending: 0, overdue: 0 }, todaysFocus: [], upcomingReminders: [], recentDocuments: [] };
 
 export default function Dashboard() {
+  const requestVersion = useRef(0);
   const nav = useNavigate();
-  const { updateTask, reloadReminders } = useApp();
+  const { tasks, reminders, updateTask, reloadReminders } = useApp();
   const { user } = useAuth();
   const [data, setData] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const load = async () => { setLoading(true); setError(''); try { setData(await integrationService.dashboard(TODAY)); } catch (e) { setError(getErrorMessage(e, 'Unable to load your dashboard.')); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, []);
+  const load = async () => { const version = ++requestVersion.current; setLoading(true); setError(''); try { const result = await integrationService.dashboard(TODAY); if (version === requestVersion.current) setData(result); } catch (e) { setError(getErrorMessage(e, 'Unable to load your dashboard.')); } finally { if (version === requestVersion.current) setLoading(false); } };
+  useEffect(() => { load(); }, [tasks, reminders]);
   const complete = async (id) => { await updateTask(id, { status: 'Completed' }); await reloadReminders(); await load(); };
   const firstName = user?.fullName?.trim().split(/\s+/)[0] || 'there';
   return <>

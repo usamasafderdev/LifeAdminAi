@@ -387,7 +387,7 @@ function SavedDocumentDetail({ document, onBack, onUpdate, onDelete }) {
               {analysis?.status === 'completed' && reviewStatus !== 'pending_review' && <Button variant="secondary" disabled={analyzing || analysisRetrySeconds > 0} onClick={runAnalysis}><Bot size={15} />{analysisRetrySeconds > 0 ? `Retry in ${analysisRetrySeconds}s` : 'Analyze Again'}</Button>}
             </div>
           </section>
-          <DocumentChatWorkspace document={document} className="document-detail-chat" />
+          <DocumentChatWorkspace key={document.id} document={document} className="document-detail-chat" />
         </div>
         <aside className="saved-document-aside">
           <section className="panel record-overview">

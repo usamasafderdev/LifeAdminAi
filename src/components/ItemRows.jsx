@@ -148,7 +148,7 @@ export function DocumentCard({ doc, view = 'grid', onDelete, selected = false, o
             <Calendar size={13} />
             {doc.date ? `Created ${doc.date}` : 'Saved'}
           </span>
-          <span title={doc.originalFilename || ''}>{doc.originalFilename || doc.type}</span>
+          <span title={doc.title || ''}>{doc.title || doc.type}</span>
         </div>
       </div>
     </article>

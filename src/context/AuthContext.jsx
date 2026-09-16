@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { authService } from '../services/authService';
-import { assistantService } from '../services/assistantService';
 import { getToken, removeToken, setToken } from '../utils/authStorage';
 
 const AuthContext = createContext(null);
@@ -37,7 +36,6 @@ export function AuthProvider({ children }) {
   }, []);
 
   const acceptSession = async (data, remember) => {
-    if (getToken()) await assistantService.clear().catch(() => {});
     setToken(data.token, remember);
     setUser(data.user);
     return data.user;
@@ -48,8 +46,8 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = async (credential, remember = true) =>
     await acceptSession(await authService.google(credential), remember);
   const logout = async () => {
-    try { await assistantService.clear(); } catch { /* Local logout must still succeed. */ }
-    finally { removeToken(); setUser(null); }
+    removeToken();
+    setUser(null);
   };
   const refreshCurrentUser = async () => {
     const data = await authService.me();
@@ -58,7 +56,16 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(user), isInitializing, login, register, loginWithGoogle, logout, refreshCurrentUser }),
+    () => ({
+      user,
+      isAuthenticated: Boolean(user),
+      isInitializing,
+      login,
+      register,
+      loginWithGoogle,
+      logout,
+      refreshCurrentUser,
+    }),
     [user, isInitializing],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

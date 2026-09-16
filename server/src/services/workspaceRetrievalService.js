@@ -91,8 +91,10 @@ async function taskSources(userId, tasks, detail) {
 
 export function classifyWorkspaceQuery(message) {
   const q = String(message || '').toLowerCase();
-  const workspaceTerms = /(task|tasks|due|deadline|document|documents|uploaded file|pdf|upload|reminder|calendar|schedule|event|workspace|notes|remind|plan|invoice|invoice|report|memory|previous|history)/i;
+  const workspaceTerms = /(task|tasks|due|deadline|document|documents|assignment|uploaded file|pdf|upload|reminder|calendar|schedule|event|workspace|notes|remind|plan|invoice|invoice|report|memory|previous|history)/i;
   const generalTerms = /(where can i buy|where can i get|where can i find|from where can i buy|from where i can buy|give me .*shop|shops with location|physical shop|location|recommend|recommendation|explain|who is the best|best .*brand|what is|who is|when is|how do i|why is|tell me about|machine learning|compare)/i;
+  if (/\b(?:assignment|document|file|section)\b/.test(q) && /\b(summarize|summarise|say|talk|explain|uploaded|based|section)\b/.test(q)) return 'semantic_documents';
+  if (/\b(?:my|this|that|uploaded)\s+(?:\w+\s+){0,3}(?:assignment|document|file|report)\b/i.test(q) && /\b(explain|compare|based on|according to)\b/i.test(q)) return 'semantic_documents';
   if (generalTerms.test(q) && !workspaceTerms.test(q)) return 'general_knowledge';
   if (/\b(where can i buy|where can i get|where can i find|from where can i buy|from where i can buy|buy.*bat|where.*bat).*?\b/.test(q)) return 'general_knowledge';
   if (
@@ -189,9 +191,14 @@ export async function retrieveWorkspace({ userId, message, date = {} }) {
       { kind, count: items.length },
     );
   }
-  const tasks = await realTasks(userId, now);
+  const tasks = kind === 'semantic_documents' ? [] : await realTasks(userId, now);
   const open = tasks.filter((item) => OPEN.includes(item.status));
   const deadlines = summarizeTaskDeadlines(tasks, { today, windowDays: 14 });
+  if (kind === 'focus_today') {
+    const items = open.filter(task => task.priority === 'high' || (task.dueDate && taskDateKey(task.dueDate) <= today))
+      .sort((a, b) => taskPriorityRank[a.priority] - taskPriorityRank[b.priority] || b.priorityScore - a.priorityScore).slice(0, 10);
+    return direct(items.length ? `Focus on these current tasks:\n${items.map(task => `- ${taskLine(task)}`).join('\n')}` : 'You have no pending tasks requiring attention today.', await taskSources(userId, items, 'Current task'), { kind, today, count: items.length });
+  }
   if (kind === 'open_task_count')
     return direct(`**${open.length} open task${open.length === 1 ? '' : 's'}.**`, [], {
       kind,
@@ -349,7 +356,7 @@ export async function retrieveWorkspace({ userId, message, date = {} }) {
       { kind, count: items.length },
     );
   }
-  const reminders = await Reminder.find({
+  const reminders = kind === 'semantic_documents' ? [] : await Reminder.find({
     userId,
     status: 'active',
     remindAt: { $gte: day.start, $lt: new Date(day.start.getTime() + 14 * 86400000) },
@@ -370,11 +377,15 @@ export async function retrieveWorkspace({ userId, message, date = {} }) {
   const docContexts = [];
   const documentCount = await Document.countDocuments({ userId });
   // Stream metadata across the collection; retain at most five bounded contexts.
-  for await (const doc of await workspaceKnowledgeCandidates(userId, message)) {
+  const yesterday = /\buploaded yesterday\b/i.test(message);
+  const uploadDay = reminderDayBounds(addCalendarDays(today, -1), timezoneOffset);
+  const candidates = yesterday ? Document.find({ userId, createdAt: { $gte: uploadDay.start, $lt: uploadDay.end } }).sort({ createdAt: -1 }).limit(20).select('title category').lean() : await workspaceKnowledgeCandidates(userId, message);
+  const documentQuery = yesterday || /\btalk about\b/i.test(message) ? `Summarize ${message}` : message;
+  for await (const doc of candidates) {
     const selected = await retrieveDocumentKnowledge({
       documentId: doc._id,
       userId,
-      question: message,
+      question: documentQuery,
       config: { maxContextChars: 15000, maxChunks: 2, maxHistoryMessages: 4 },
     });
     if (!selected.context) continue;

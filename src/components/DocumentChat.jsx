@@ -1,3 +1,4 @@
+import { chatError } from '../services/chatError';
 import { MemoryIndicator, MemorySuggestions } from './MemoryControls';
 import { Download, FileText, Send, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -15,23 +16,6 @@ const prompts = [
   'Summarize the main requirements.',
 ];
 
-function chatError(error) {
-  const message = error.response?.data?.message || '';
-  if (error.response?.status === 429 || /rate limit/i.test(message))
-    return 'AI usage limits are temporarily reached. Please try again shortly.';
-  if (error.response?.status === 502)
-    return 'The AI response could not be processed. Please try again.';
-  if (error.response?.status === 503) return 'AI services are temporarily unavailable.';
-  if (error.response?.status === 504) return 'The AI response took too long. Please try again.';
-  if (/timed out|timeout/i.test(message)) return 'The AI response took too long. Please try again.';
-  if (/temporarily unavailable|provider unavailable/i.test(message))
-    return 'The AI service is temporarily unavailable.';
-  if (/readable text/i.test(message))
-    return 'This document does not contain readable text to chat with.';
-  if (!error.response) return 'Unable to reach the server.';
-  return getErrorMessage(error, 'Unable to answer this question.');
-}
-
 export function DocumentChatWorkspace({ document, className = '' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -41,6 +25,7 @@ export function DocumentChatWorkspace({ document, className = '' }) {
   const [clearing, setClearing] = useState(false);
   const [downloading, setDownloading] = useState('');
   const [sourceView, setSourceView] = useState(null);
+  const [historyRetry, setHistoryRetry] = useState(0);
   const [sourceLoading, setSourceLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const submittingRef = useRef(false);
@@ -49,6 +34,7 @@ export function DocumentChatWorkspace({ document, className = '' }) {
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setMessages([]);
     setSourceView(null);
     setError('');
     documentService
@@ -65,7 +51,7 @@ export function DocumentChatWorkspace({ document, className = '' }) {
     return () => {
       active = false;
     };
-  }, [document.id]);
+  }, [document.id, historyRetry]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'nearest' });
@@ -73,24 +59,27 @@ export function DocumentChatWorkspace({ document, className = '' }) {
 
   const send = async (value, retryId = '') => {
     const text = (value || input).trim();
-    if (!text || submittingRef.current || !readable) return;
+    if (!text || submittingRef.current || loading || clearing || !readable) return;
     submittingRef.current = true;
     setInput('');
     setThinking(true);
     setError('');
-    const optimistic = { id: `pending-${Date.now()}`, role: 'user', text };
+    const requestId =
+      (retryId && messages.find((item) => item.id === retryId)?.requestId) || crypto.randomUUID();
+    const optimistic = { id: `pending-${requestId}`, requestId, role: 'user', text };
     setMessages((items) =>
       retryId
-        ? items.map((item) => (item.id === retryId ? { ...item, failed: false } : item))
+        ? items.map((item) => (item.id === retryId ? { ...item, failed: false, requestId } : item))
         : [...items, optimistic],
     );
     try {
-      const result = await documentService.sendChat(document.id, text);
+      const result = await documentService.sendChat(document.id, text, requestId);
       if (result.message.memory?.saved?.length)
         window.dispatchEvent(new Event('lifeadmin-memory-changed'));
       setMessages((items) => [
-        ...items.filter((item) => item.id !== (retryId || optimistic.id)),
-        result.userMessage,
+        ...items
+          .filter((item) => item.id !== result.message.id)
+          .map((item) => (item.id === (retryId || optimistic.id) ? result.userMessage : item)),
         result.message,
       ]);
     } catch (requestError) {
@@ -145,7 +134,14 @@ export function DocumentChatWorkspace({ document, className = '' }) {
       <MemoryIndicator />
       {error && (
         <p className="document-chat-error" role="alert">
-          {error}
+          {error}{' '}
+          <button
+            type="button"
+            disabled={thinking || loading}
+            onClick={() => setHistoryRetry((value) => value + 1)}
+          >
+            Reload history
+          </button>
         </p>
       )}
       {sourceView && (
@@ -397,7 +393,7 @@ export default function DocumentChat() {
             View document
           </Button>
         </aside>
-        <DocumentChatWorkspace document={document} />
+        <DocumentChatWorkspace key={document.id} document={document} />
       </div>
     </>
   );

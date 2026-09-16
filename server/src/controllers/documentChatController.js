@@ -1,3 +1,10 @@
+import {
+  resolveConversation,
+  historyFilter,
+  saveChatPair,
+  withChatPersistence,
+  clearChatHistory,
+} from '../services/chatPersistenceService.js';
 import { suggestMemories } from '../services/memoryService.js';
 import { containsCredentials } from '../services/memoryExtractionService.js';
 import { getKnowledgeSource } from '../services/documentKnowledgeService.js';
@@ -29,13 +36,15 @@ export async function getDocumentChat(req, res, next) {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
     if (!(await ownedDocument(req.params.id, req.user._id)))
       return res.status(404).json(invalid('Document not found'));
+    req.conversation = await resolveConversation(req, 'document');
     const messages = await DocumentChatMessage.find({
+      ...historyFilter(req),
       userId: req.user._id,
       documentId: req.params.id,
     })
       .sort({ createdAt: -1, _id: -1 })
       .limit(200)
-      .select('role content sources attachment createdAt')
+      .select('role content sources attachment createdAt requestId status')
       .lean();
     messages.reverse();
     return res.json({ success: true, messages, count: messages.length });
@@ -44,7 +53,7 @@ export async function getDocumentChat(req, res, next) {
   }
 }
 
-export async function postDocumentChat(req, res, next) {
+async function postDocumentChatImpl(req, res, next) {
   try {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
     const document = await ownedDocument(req.params.id, req.user._id);
@@ -66,6 +75,7 @@ export async function postDocumentChat(req, res, next) {
         .status(400)
         .json(invalid('This document does not contain readable text to chat with'));
     const history = await DocumentChatMessage.find({
+      ...historyFilter(req),
       userId: req.user._id,
       documentId: document._id,
     })
@@ -88,7 +98,7 @@ export async function postDocumentChat(req, res, next) {
             format: 'docx',
             fileName: existing.fileName,
           };
-          const [userMessage, assistantMessage] = await DocumentChatMessage.create([
+          const [userMessage, assistantMessage] = await saveChatPair(req, [
             { userId: req.user._id, documentId: document._id, role: 'user', content: message },
             {
               userId: req.user._id,
@@ -98,17 +108,15 @@ export async function postDocumentChat(req, res, next) {
               attachment,
             },
           ]);
-          return res
-            .status(201)
-            .json({
-              success: true,
-              memory: await suggestMemories(req.user._id, message),
-              answer,
-              attachment,
-              reused: true,
-              message: assistantMessage,
-              userMessage,
-            });
+          return res.status(201).json({
+            success: true,
+            memory: await suggestMemories(req.user._id, message).catch(() => null),
+            answer,
+            attachment,
+            reused: true,
+            message: assistantMessage,
+            userMessage,
+          });
         }
       }
       const result = await documentGenerator({ document, question: message });
@@ -131,7 +139,7 @@ export async function postDocumentChat(req, res, next) {
           format: 'docx',
           fileName: generated.fileName,
         };
-        const [userMessage, assistantMessage] = await DocumentChatMessage.create([
+        const [userMessage, assistantMessage] = await saveChatPair(req, [
           { userId: req.user._id, documentId: document._id, role: 'user', content: message },
           {
             userId: req.user._id,
@@ -142,23 +150,21 @@ export async function postDocumentChat(req, res, next) {
             attachment,
           },
         ]);
-        return res
-          .status(201)
-          .json({
-            success: true,
-            memory: await suggestMemories(req.user._id, message),
-            answer,
-            attachment,
-            message: assistantMessage,
-            userMessage,
-          });
+        return res.status(201).json({
+          success: true,
+          memory: await suggestMemories(req.user._id, message).catch(() => null),
+          answer,
+          attachment,
+          message: assistantMessage,
+          userMessage,
+        });
       } catch (error) {
         if (file?.absolutePath) await fs.unlink(file.absolutePath).catch(() => {});
         throw error;
       }
     }
     const result = await answerer({ document, question: message, history });
-    const [userMessage, assistantMessage] = await DocumentChatMessage.create([
+    const [userMessage, assistantMessage] = await saveChatPair(req, [
       { userId: req.user._id, documentId: document._id, role: 'user', content: message },
       {
         userId: req.user._id,
@@ -169,16 +175,14 @@ export async function postDocumentChat(req, res, next) {
         sources: result.sources,
       },
     ]);
-    return res
-      .status(201)
-      .json({
-        success: true,
-        memory: await suggestMemories(req.user._id, message),
-        answer: result.answer,
-        sources: result.sources,
-        message: assistantMessage,
-        userMessage,
-      });
+    return res.status(201).json({
+      success: true,
+      memory: await suggestMemories(req.user._id, message).catch(() => null),
+      answer: result.answer,
+      sources: result.sources,
+      message: assistantMessage,
+      userMessage,
+    });
   } catch (error) {
     return next(error);
   }
@@ -210,10 +214,7 @@ export async function clearDocumentChat(req, res, next) {
     if (!validId(req.params.id)) return res.status(400).json(invalid('Invalid document ID'));
     if (!(await ownedDocument(req.params.id, req.user._id)))
       return res.status(404).json(invalid('Document not found'));
-    const result = await DocumentChatMessage.deleteMany({
-      userId: req.user._id,
-      documentId: req.params.id,
-    });
+    const result = await clearChatHistory(req, 'document');
     return res.json({
       success: true,
       message: 'Document chat cleared',
@@ -247,3 +248,5 @@ export async function getDocumentSource(req, res, next) {
     return next(error);
   }
 }
+
+export const postDocumentChat = withChatPersistence('document', postDocumentChatImpl);

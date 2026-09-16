@@ -17,6 +17,7 @@
     "test:ocr": "node src/scripts/testOcr.js",
     "test:ai": "node src/scripts/testAiService.js",
     "test:ai-provider": "node src/scripts/testAiProvider.js",
+    "test:ai-settings": "node src/scripts/testAiSettings.js",
     "test:ai-fallback": "node src/scripts/testAiFallback.js",
     "test:document-ai": "node src/scripts/testDocumentAi.js",
     "test:ai-validation": "node src/scripts/testAiValidation.js",
@@ -44,7 +45,11 @@
     "test:scheduling-integration": "node src/scripts/testScheduling.js --integration",
     "test:notifications": "node src/scripts/testNotifications.js",
     "test:multi-document": "node src/scripts/testMultiDocumentAnalysis.js",
-    "test:multi-document-advanced": "node src/scripts/testMultiDocumentAnalysisAdvanced.js"
+    "test:multi-document-advanced": "node src/scripts/testMultiDocumentAnalysisAdvanced.js",
+    "test:assistant-routing": "node src/scripts/testAssistantRouting.js",
+    "test:conversations": "node src/scripts/testConversations.js",
+    "test:privacy": "node src/scripts/testPrivacy.js",
+    "test:chat-browser": "node src/scripts/testChatBrowser.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",

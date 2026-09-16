@@ -1,3 +1,5 @@
+import { syncTaskSchedule } from './calendarTaskLifecycleService.js';
+import { applyTaskPriority } from './taskPriorityService.js';
 import mongoose from 'mongoose';
 import CalendarEvent from '../models/CalendarEvent.js';
 import AvailabilityProfile from '../models/AvailabilityProfile.js';
@@ -212,14 +214,17 @@ export async function changeCalendarEvent(userId, id, body) {
       'Choose completed or cancelled. To reschedule, cancel and generate a new preview.',
     );
   return calendarWrite(userId, async (session, profile) => {
-    const query = CalendarEvent.findOneAndUpdate(
-      { _id: id, userId, status: 'planned' },
-      { $set: { status: body.status } },
-      { new: true },
-    );
-    if (session) query.session(session);
-    const event = await query;
+    const event = await CalendarEvent.findOne({ _id: id, userId, status: { $in: ['planned', body.status] } }).session(session);
     if (!event) throw schedulingError('Planned event not found.', 404);
+    if (body.status === 'completed' && event.relatedTaskId) {
+      const task = await Task.findOne({ _id: event.relatedTaskId, userId }).session(session);
+      if (!task) throw schedulingError('Task not found.', 404);
+      task.set(applyTaskPriority({ ...task.toObject(), status: 'completed' }));
+      await task.save(session ? { session } : {});
+      await syncTaskSchedule(userId, task, { session });
+    }
+    event.status = body.status;
+    await event.save(session ? { session } : {});
     return event;
   });
 }

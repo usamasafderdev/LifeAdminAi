@@ -9,10 +9,12 @@ export const AI_ERROR_CODES = Object.freeze({
 });
 
 const SAFE_MESSAGES = Object.freeze({
-  [AI_ERROR_CODES.NOT_CONFIGURED]: 'The AI provider is not configured.',
+  [AI_ERROR_CODES.NOT_CONFIGURED]:
+    'AI assistance is currently unavailable because no AI provider is configured.',
   [AI_ERROR_CODES.AUTHENTICATION_FAILED]: 'The AI provider rejected the configured credentials.',
-  [AI_ERROR_CODES.RATE_LIMITED]: 'The AI provider rate limit was reached. Please try again later.',
-  [AI_ERROR_CODES.TIMEOUT]: 'The AI provider request timed out.',
+  [AI_ERROR_CODES.RATE_LIMITED]: 'LifeAdmin is temporarily busy. Please try again in a moment.',
+  [AI_ERROR_CODES.TIMEOUT]:
+    "LifeAdmin couldn't complete that request because the AI service took too long to respond. Please try again.",
   [AI_ERROR_CODES.PROVIDER_UNAVAILABLE]: 'The AI provider is temporarily unavailable.',
   [AI_ERROR_CODES.INVALID_RESPONSE]: 'The AI provider returned an invalid response.',
   [AI_ERROR_CODES.REQUEST_FAILED]: 'The AI provider request failed.',

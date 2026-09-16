@@ -109,10 +109,19 @@ export const documentService = {
   },
   async getChat(id) {
     const { data } = await api.get(`/documents/${id}/chat`);
-    return data.messages.map((message) => ({ ...message, id: message._id, text: message.content }));
+    return data.messages.map((message) => ({
+      ...message,
+      id: message._id,
+      text: message.content,
+      failed: message.role === 'user' && ['failed', 'pending'].includes(message.status),
+    }));
   },
-  async sendChat(id, message) {
-    const { data } = await api.post(`/documents/${id}/chat`, { message }, { timeout: 45000 });
+  async sendChat(id, message, requestId) {
+    const { data } = await api.post(
+      `/documents/${id}/chat`,
+      { message, requestId },
+      { timeout: 180000 },
+    );
     return {
       userMessage: {
         ...data.userMessage,

@@ -27,7 +27,7 @@ async function run() {
   check(out.error?.statusCode === 503 && out.calls.groq === 1 && out.calls.gemini === 1, '7. Both unavailable produce one final 503');
   out = await invoke(failure(AI_ERROR_CODES.RATE_LIMITED, 429), failure(AI_ERROR_CODES.RATE_LIMITED, 429));
   check(out.error?.statusCode === 429, '8. Both rate limited produce normalized 429');
-  const gemini = await generateWithGemini({ config: base, userPrompt: 'test', temperature: 0, maxTokens: 20, client: { models: { generateContent: async () => ({ text: 'normalized', modelVersion: 'gemini-test', usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 3, totalTokenCount: 5 } }) } } });
+  const gemini = await generateWithGemini({ config: base, userPrompt: 'test', temperature: 0, maxTokens: 20, client: { getGenerativeModel: () => ({ generateContent: async (_prompt, options) => { check(options.timeout === base.timeoutMs, 'Gemini receives configured request timeout'); return { response: { text: () => 'normalized', modelVersion: 'gemini-test', usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 3, totalTokenCount: 5 } } }; } }) } });
   check(gemini.text === 'normalized' && gemini.provider === 'gemini' && gemini.usage.totalTokens === 5, '10. Gemini success uses normalized result shape');
   const normalized = normalizeGeminiError({ status: 429, message: 'private quota body' });
   check(normalized.code === AI_ERROR_CODES.RATE_LIMITED && !normalized.message.includes('private'), '11. Gemini rate limit is safely normalized');

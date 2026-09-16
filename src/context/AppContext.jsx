@@ -1,5 +1,5 @@
 import { useNotificationData } from '../hooks/useNotificationData';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { conversations as seedConversations } from '../data/mockData';
 import { documentService } from '../services/documentService';
 import { taskService } from '../services/taskService';
@@ -12,6 +12,9 @@ export function AppProvider({ children }) {
   const [documents, setDocuments] = useState([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsError, setDocumentsError] = useState('');
+  const taskRequest = useRef(0);
+  const activeUser = useRef(user?._id);
+  activeUser.current = user?._id;
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState('');
@@ -37,10 +40,11 @@ export function AppProvider({ children }) {
   };
   const loadTasks = async () => {
     if (!user) return;
+    const request = ++taskRequest.current; const owner = user._id;
     setTasksLoading(true); setTasksError('');
-    try { setTasks(await taskService.getAll()); }
+    try { const rows = await taskService.getAll(); if (request === taskRequest.current && owner === activeUser.current) setTasks(rows); }
     catch { setTasksError('Unable to load your tasks.'); }
-    finally { setTasksLoading(false); }
+    finally { if (request === taskRequest.current) setTasksLoading(false); }
   };
   const loadReminders = async () => {
     if (!user) return;
@@ -69,7 +73,7 @@ export function AppProvider({ children }) {
     return result;
   };
   const createTask = async (values) => { const task = await taskService.create(values); setTasks((current) => [task, ...current]); return task; };
-  const updateTask = async (id, values) => { const task = await taskService.update(id, values); setTasks((current) => current.map((item) => item.id === id ? task : item)); return task; };
+  const updateTask = async (id, values) => { const owner = user?._id; const task = await taskService.update(id, values); if (owner !== activeUser.current) return task; taskRequest.current++; setTasksLoading(false); window.dispatchEvent(new Event('lifeadmin-briefing-changed')); setTasks((current) => current.map((item) => item.id === id ? task : item)); return task; };
   const completeTask = async (id) => { const current = tasks.find((task) => task.id === id); if (!current) return; await updateTask(id, { status: current.status === 'Completed' ? 'Pending' : 'Completed' }); await loadReminders(); notify('Task updated'); };
   const deleteTask = async (id) => { await taskService.remove(id); setTasks((current) => current.filter((task) => task.id !== id)); setReminders((current) => current.filter((reminder) => String(reminder.taskId) !== String(id))); notify('Task deleted'); };
   const snoozeTask = async (id) => { const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); await updateTask(id, { date: tomorrow.toISOString().slice(0, 10) }); notify('Task snoozed'); };

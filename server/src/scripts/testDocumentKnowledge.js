@@ -227,7 +227,9 @@ async function run() {
       message: 'What is the zebra birthday?',
     });
     check(
-      absent.answer === NOT_FOUND && absent.sources.length === 0 && before === calls,
+      absent.answer === 'I could not find this information in the document.' &&
+        absent.sources.length === 0 &&
+        before === calls,
       'Unrelated query abstains without provider call',
     );
     check(

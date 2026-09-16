@@ -1,6 +1,18 @@
 const DEFAULT_PROVIDER = 'groq';
 const DEFAULT_TIMEOUT_MS = 30000;
 
+function providerModel(config, provider) {
+  return provider === 'gemini' ? config.geminiModel : provider === 'groq' ? config.model : '';
+}
+
+function providerConfigured(config, provider) {
+  return provider === 'gemini'
+    ? Boolean(config.geminiApiKey && config.geminiModel)
+    : provider === 'groq'
+      ? Boolean(config.apiKey && config.model)
+      : false;
+}
+
 function parseTimeout(value) {
   if (value === undefined || value === '') return DEFAULT_TIMEOUT_MS;
 
@@ -26,19 +38,32 @@ export function getAiConfig() {
 
 export function isAiConfigured() {
   const config = getAiConfig();
-  const primary = config.provider === 'groq' ? config.apiKey && config.model : config.provider === 'gemini' ? config.geminiApiKey && config.geminiModel : false;
-  const fallback = config.fallbackProvider === 'gemini' && config.geminiApiKey && config.geminiModel;
-  return Boolean(primary || fallback);
+  return Boolean(
+    providerConfigured(config, config.provider) ||
+    providerConfigured(config, config.fallbackProvider),
+  );
 }
 
 export function getAiMetadata() {
   const config = getAiConfig();
+  const provider = providerConfigured(config, config.provider)
+    ? config.provider
+    : providerConfigured(config, config.fallbackProvider)
+      ? config.fallbackProvider
+      : null;
   return Object.freeze({
-    configured: isAiConfigured(),
-    provider: config.provider,
-    model: config.model || null,
+    configured: Boolean(provider),
+    provider,
+    model: provider ? providerModel(config, provider) || null : null,
     fallbackProvider: config.fallbackProvider || null,
-    fallbackConfigured: Boolean(config.fallbackProvider === 'gemini' && config.geminiApiKey && config.geminiModel),
+    fallbackConfigured: providerConfigured(config, config.fallbackProvider),
+    missing: provider
+      ? null
+      : config.provider === 'gemini'
+        ? 'Configure GEMINI_API_KEY and GEMINI_MODEL.'
+        : config.provider === 'groq'
+          ? 'Configure AI_API_KEY and AI_MODEL.'
+          : 'Configure AI_PROVIDER and the credentials and model for that provider.',
   });
 }
 

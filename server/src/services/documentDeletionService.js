@@ -1,3 +1,4 @@
+import Conversation from '../models/Conversation.js';
 import DocumentChunk from '../models/DocumentChunk.js';
 import { clearTaskSchedule } from './calendarTaskLifecycleService.js';
 import { vectorStoreService } from './vectorStoreService.js';
@@ -20,6 +21,8 @@ async function deleteDatabaseRecords(documentId, userId, session = null) {
   const options = session ? { session } : {};
   const taskIds = await Task.find({ userId, documentId }, '_id', options).lean();
   const reminderResult = await Reminder.deleteMany({ userId, $or: [{ documentId }, { taskId: { $in: taskIds.map((task) => task._id) } }] }, options);
+  await Conversation.deleteMany({ userId, documentId, type: 'document' }, options);
+  await Conversation.updateMany({ userId, documentId, type: 'global' }, { $set: { documentId: null } }, options);
   const chatResult = await DocumentChatMessage.deleteMany({ userId, documentId }, options);
   const generatedFiles = await GeneratedDocument.find({ userId, sourceDocumentId: documentId }, 'filePath', options).lean();
   const generatedResult = await GeneratedDocument.deleteMany({ userId, sourceDocumentId: documentId }, options);

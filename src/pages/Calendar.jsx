@@ -1,5 +1,6 @@
+import { useApp } from '../context/AppContext';
 import { BellRing, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Drawer, EmptyState, PageHeader, PriorityBadge, Skeleton } from '../components/UI';
 import { getErrorMessage } from '../services/api';
@@ -9,12 +10,14 @@ import SchedulePanel from '../components/SchedulePanel';
 const dateKey = (value) => { const date = new Date(value); return Number.isNaN(date.getTime()) ? '' : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
 
 export default function Calendar() {
+  const { tasks, reminders } = useApp();
+  const requestVersion = useRef(0);
   const nav = useNavigate(); const now = new Date();
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
   const [events, setEvents] = useState([]); const [selected, setSelected] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const first = new Date(cursor.year, cursor.month, 1); const start = new Date(cursor.year, cursor.month, 1); const end = new Date(cursor.year, cursor.month + 1, 1);
-  const load = async () => { setLoading(true); setError(''); try { setEvents(await integrationService.calendar(start.toISOString(), end.toISOString())); } catch (e) { setError(getErrorMessage(e, 'Unable to load your calendar.')); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, [cursor.year, cursor.month]);
+  const load = async () => { const version = ++requestVersion.current; setLoading(true); setError(''); try { const rows = await integrationService.calendar(start.toISOString(), end.toISOString()); if (version !== requestVersion.current) return; setEvents(rows); setSelected(current => current ? rows.find(row => row.id === current.id && row.type === current.type) || null : null); } catch (e) { setError(getErrorMessage(e, 'Unable to load your calendar.')); } finally { if (version === requestVersion.current) setLoading(false); } };
+  useEffect(() => { load(); }, [cursor.year, cursor.month, tasks, reminders]);
   const move = (delta) => setCursor((value) => { const date = new Date(value.year, value.month + delta, 1); return { year: date.getFullYear(), month: date.getMonth() }; });
   const cells = useMemo(() => { const offset = (first.getDay() + 6) % 7; return Array.from({ length: 42 }, (_, index) => { const date = new Date(cursor.year, cursor.month, index - offset + 1); return { date, key: dateKey(date), outside: date.getMonth() !== cursor.month }; }); }, [cursor.year, cursor.month]);
   return <>
